@@ -12,33 +12,35 @@ class ActivityShikigamiAssets:
 
 	# Click Rule Assets
 	# description 
-	C_RANDOM_LEFT = RuleClick(roi_front=(17,84,104,356), roi_back=(17,81,106,365), name="random_left")
+	C_RANDOM_LEFT = RuleClick(roi_front=(17,84,232,575), roi_back=(17,81,235,581), name="random_left")
 	# description 
-	C_RANDOM_RIGHT = RuleClick(roi_front=(1133,88,131,361), roi_back=(1131,84,133,363), name="random_right")
+	C_RANDOM_RIGHT = RuleClick(roi_front=(1044,85,215,614), roi_back=(1048,84,216,611), name="random_right")
 	# description 
 	C_RANDOM_TOP = RuleClick(roi_front=(126,66,989,58), roi_back=(123,65,991,58), name="random_top")
 	# description 
-	C_RANDOM_BOTTOM = RuleClick(roi_front=(196,598,581,78), roi_back=(194,597,583,81), name="random_bottom")
+	C_RANDOM_BOTTOM = RuleClick(roi_front=(199,600,1035,89), roi_back=(194,597,1048,95), name="random_bottom")
 	# description 
 	C_RANDOM_ALL = RuleClick(roi_front=(42,94,1207,543), roi_back=(42,94,1207,543), name="random_all")
 
 
 	# Image Rule Assets
 	# 上锁图标 
-	I_LOCK = RuleImage(roi_front=(825,657,28,25), roi_back=(739,432,440,266), threshold=0.5, method="Template matching", file="./tasks/ActivityShikigami/as/as_lock.png")
+	I_LOCK = RuleImage(roi_front=(798,652,28,25), roi_back=(739,432,440,266), threshold=0.5, method="Template matching", file="./tasks/ActivityShikigami/as/as_lock.png")
 	# 还未上锁图片 
-	I_UNLOCK = RuleImage(roi_front=(884,648,28,25), roi_back=(733,426,444,276), threshold=0.5, method="Template matching", file="./tasks/ActivityShikigami/as/as_unlock.png")
+	I_UNLOCK = RuleImage(roi_front=(797,650,28,25), roi_back=(733,426,444,276), threshold=0.5, method="Template matching", file="./tasks/ActivityShikigami/as/as_unlock.png")
 	# 活动爬塔标志 
 	I_CLIMB_MODE_PASS = RuleImage(roi_front=(1142,547,21,21), roi_back=(1129,516,45,74), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/as_climb_mode_pass.png")
 	# 体力爬塔标志 
 	I_CLIMB_MODE_AP = RuleImage(roi_front=(1093,544,20,20), roi_back=(1055,495,100,100), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/as_climb_mode_ap.png")
 	# 切换按键 
 	I_CLIMB_MODE_SWITCH = RuleImage(roi_front=(1236,543,25,26), roi_back=(1174,511,104,82), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/as_climb_mode_switch.png")
+	#  
+	I_CLIMB_END_REWARD = RuleImage(roi_front=(480,670,312,46), roi_back=(439,660,413,60), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/as_climb_end_reward.png")
 
 
 	# Image Rule Assets
 	# 进入活动 
-	I_SHI = RuleImage(roi_front=(1187,463,39,28), roi_back=(1165,128,83,393), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/as_shi.png")
+	I_SHI = RuleImage(roi_front=(450,235,39,28), roi_back=(293,192,545,124), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/as_shi.png")
 	# 左上角返回 
 	I_BACK_GREEN = RuleImage(roi_front=(27,19,34,38), roi_back=(2,1,170,75), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/as_back_green.png")
 	# 右上跳过按钮 
@@ -50,7 +52,7 @@ class ActivityShikigamiAssets:
 	# 点击进入boss战斗页面 
 	I_TO_BATTLE_BOSS = RuleImage(roi_front=(1111,248,37,136), roi_back=(979,142,234,327), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/as_to_battle_boss.png")
 	# description 
-	I_CHECK_BATTLE_MAIN = RuleImage(roi_front=(50,642,62,58), roi_back=(1,510,415,203), threshold=0.65, method="Template matching", file="./tasks/ActivityShikigami/as/as_check_battle_main.png")
+	I_CHECK_BATTLE_MAIN = RuleImage(roi_front=(20,637,62,58), roi_back=(1,510,415,203), threshold=0.65, method="Template matching", file="./tasks/ActivityShikigami/as/as_check_battle_main.png")
 	# description 
 	I_CHECK_BATTLE_BOSS = RuleImage(roi_front=(978,636,43,31), roi_back=(899,537,167,154), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/as_check_battle_boss.png")
 	# 从main进入到式神录 

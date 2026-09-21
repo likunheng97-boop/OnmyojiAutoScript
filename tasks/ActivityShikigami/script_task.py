@@ -11,7 +11,7 @@ from typing import Any
 from cached_property import cached_property
 
 from module.atom.image import RuleImage
-from module.atom.click import RuleClick
+from module.atom.click import RuleClick, RuleClickExclude
 from module.atom.ocr import RuleOcr
 from module.base.protect import random_sleep
 from module.base.timer import Timer
@@ -142,11 +142,44 @@ class StateMachine(BaseTask):
         logger.hr(f'Climb switch to {self.climb_type}', 2)
         return True
 
+class _AreaClick(RuleClickExclude):
+    """点击点只在给定区域内随机；保留父类能力，因为 2% 分支要用 coord_in_excluded。"""
+    def __init__(self, areas: list, anchors: list, name: str = 'exclude_click_activity'):
+        super().__init__(anchors, name=name, strategy='rejection', distribution='uniform')
+        self._areas = list(areas)
+
+    def coord(self) -> tuple:
+        # RuleClick.coord() 是正态聚中取点，不是均匀；落进排除区就重抽
+        for _ in range(20):
+            x, y = random.choice(self._areas).coord()
+            if not self._is_excluded(x, y):
+                return x, y
+        return random.choice(self._areas).coord()
+
+class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikigamiAssets):
+    """更新前请先看 ./README.md"""
+
+    I_UI_REWARD = ActivityShikigamiAssets.I_CLIMB_END_REWARD      # 方案 A 那行
+
+    # 想换区域只改这一行（名字来自 as/click.json，生成后是 C_ 开头）
+    CLIMB_CLICK_AREAS = ( 'C_RANDOM_RIGHT', 'C_RANDOM_BOTTOM')
+
+    @cached_property
+    def exclude_click_activity(self, areas: list[str] = None) -> RuleClickExclude:
+        missing = [n for n in self.CLIMB_CLICK_AREAS if not hasattr(self, n)]
+        if missing:
+            raise AttributeError(f'CLIMB_CLICK_AREAS 里的名字在 assets.py 里找不到: {missing}。'
+                                 f'检查 as/click.json 的 itemName 是否已保存并重新生成过 assets.py。')
+        return _AreaClick([getattr(self, n) for n in self.CLIMB_CLICK_AREAS],
+                          [self.C_END_MESSAGE_RIGHT_TOP, self.C_END_ACTIVITY_REWARD])
 
 class ScriptTask(StateMachine, GameUi, Battle, BaseActivity, SwitchSoul, ActivityShikigamiAssets):
     """
     更新前请先看 ./README.md
     """
+    # 爬塔的结算界面与通用战斗不同，改用本任务自己的锚点图。
+    # success='activity' 这个策略全仓库只有爬塔在用，所以只影响爬塔。
+    I_UI_REWARD = ActivityShikigamiAssets.I_CLIMB_END_REWARD
 
     def run(self) -> None:
         self.limit_time: timedelta = self.conf.general_climb.limit_time_v

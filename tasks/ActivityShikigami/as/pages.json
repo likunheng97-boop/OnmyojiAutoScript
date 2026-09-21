@@ -2,8 +2,8 @@
   {
     "itemName": "shi",
     "imageName": "as_shi.png",
-    "roiFront": "1187,463,39,28",
-    "roiBack": "1165,128,83,393",
+    "roiFront": "450,235,39,28",
+    "roiBack": "293,192,545,124",
     "method": "Template matching",
     "threshold": 0.7,
     "description": "进入活动"
@@ -56,7 +56,7 @@
   {
     "itemName": "check_battle_main",
     "imageName": "as_check_battle_main.png",
-    "roiFront": "50,642,62,58",
+    "roiFront": "20,637,62,58",
     "roiBack": "1,510,415,203",
     "method": "Template matching",
     "threshold": 0.65,

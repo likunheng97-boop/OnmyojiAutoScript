@@ -2,7 +2,7 @@
   {
     "itemName": "lock",
     "imageName": "as_lock.png",
-    "roiFront": "825,657,28,25",
+    "roiFront": "798,652,28,25",
     "roiBack": "739,432,440,266",
     "method": "Template matching",
     "threshold": 0.5,
@@ -11,7 +11,7 @@
   {
     "itemName": "unlock",
     "imageName": "as_unlock.png",
-    "roiFront": "884,648,28,25",
+    "roiFront": "797,650,28,25",
     "roiBack": "733,426,444,276",
     "method": "Template matching",
     "threshold": 0.5,
@@ -43,5 +43,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "切换按键"
+  },
+  {
+    "itemName": "climb_end_reward",
+    "imageName": "as_climb_end_reward.png",
+    "roiFront": "480,670,312,46",
+    "roiBack": "439,660,413,60",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": ""
   }
 ]

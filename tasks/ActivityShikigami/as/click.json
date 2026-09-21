@@ -1,14 +1,14 @@
 [
   {
     "itemName": "random_left",
-    "roiFront": "17,84,104,356",
-    "roiBack": "17,81,106,365",
+    "roiFront": "17,84,232,575",
+    "roiBack": "17,81,235,581",
     "description": "description"
   },
   {
     "itemName": "random_right",
-    "roiFront": "1133,88,131,361",
-    "roiBack": "1131,84,133,363",
+    "roiFront": "1044,85,215,614",
+    "roiBack": "1048,84,216,611",
     "description": "description"
   },
   {
@@ -19,8 +19,8 @@
   },
   {
     "itemName": "random_bottom",
-    "roiFront": "196,598,581,78",
-    "roiBack": "194,597,583,81",
+    "roiFront": "199,600,1035,89",
+    "roiBack": "194,597,1048,95",
     "description": "description"
   },
   {
