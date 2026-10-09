@@ -538,19 +538,35 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
             # 有可能是挑战失败的
             if self.appear(self.I_I_DEFAULT) or self.appear(self.I_I_NO_DEFAULT):
                 logger.info('Click default invite')
+                # 注意：上面的 appear 判断和进入循环之间存在竞态，对话框可能已经开始淡出。
+                # 此时 I_I_DEFAULT / I_I_NO_DEFAULT 都不再匹配，原实现会在这里空转，
+                # 直到 device 的卡死看门狗（60s）抛 GameStuckError。
+                # 见 log/error/1791533030319。这里补两个出口：超时 + 对话框整体消失。
+                timeout = Timer(10).start()
                 while 1:
                     self.screenshot()
                     if self.appear(self.I_I_DEFAULT):
                         break
                     if self.appear_then_click(self.I_I_NO_DEFAULT, interval=1):
                         continue
+                    if timeout.reached():
+                        logger.warning('Click default invite timeout, dialog may be closing')
+                        break
+                    # 勾选框和确认键都识别不到，说明邀请对话框已经整体关闭
+                    if not self.appear(self.I_GI_SURE):
+                        logger.warning('Invite dialog closed while clicking default invite')
+                        break
         # 点击确认
+        timeout = Timer(15).start()
         while 1:
             self.screenshot()
             if not self.appear(self.I_GI_SURE):
                 break
             if self.appear_then_click(self.I_GI_SURE, interval=1):
                 continue
+            if timeout.reached():
+                logger.warning('Click invite ensure timeout')
+                break
 
         return True
 

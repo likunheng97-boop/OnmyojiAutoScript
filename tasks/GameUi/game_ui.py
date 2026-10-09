@@ -116,6 +116,14 @@ class GameUi(BaseTask, GameUiAssets):
             self.device.get_orientation()
 
         timeout = Timer(10, count=20).start()
+        # 未知页面的关闭尝试预算。原实现每"成功"点到一次关闭按钮就把 timeout 整个重置，
+        # 如果页面上盖着一个未注册的模态弹窗（关闭按钮的模板仍然能匹配上，但点击被弹窗挡住），
+        # 就会在同一个按钮上无限空转，直到 device 的点击看门狗抛 GameTooManyClickError。
+        # 见 log/error/1791533030319。
+        # 预算用尽后不再重置 timeout，让它正常到期并抛出 GamePageUnknownError，
+        # 交由 script.py 的异常处理走 Restart，而不是继续做无效点击。
+        close_attempt = 0
+        max_close_attempt = 6
         while 1:
             self.maybe_screenshot(skip_first_screenshot)
             skip_first_screenshot = False
@@ -132,7 +140,12 @@ class GameUi(BaseTask, GameUiAssets):
                     return page
             # Try to close unknown page
             if self.try_close_unknown_page():
-                timeout = Timer(10, count=20).start()
+                close_attempt += 1
+                if close_attempt <= max_close_attempt:
+                    timeout = Timer(10, count=20).start()
+                else:
+                    logger.warning(f'Unknown page not closed after {max_close_attempt} close attempts, '
+                                   f'stop resetting timeout')
             else:
                 # entirely unknown page, click safe random area
                 self.click(random_click(), interval=4)

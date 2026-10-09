@@ -468,19 +468,34 @@ class GeneralInvite(BaseTask, BondlingFairylandAssets, GeneralInviteAssets):
             # 有可能是挑战失败的
             if self.appear(self.I_I_DEFAULT) or self.appear(self.I_I_NO_DEFAULT):
                 logger.info('Click default invite')
+                # 与 Component/GeneralInvite 里的同名方法保持一致：
+                # 外层 appear 与进入循环之间存在竞态，对话框淡出后会失去所有匹配点，
+                # 原实现会在此空转直到 GameStuckError。补上超时与对话框消失两个出口。
+                timeout = Timer(10).start()
                 while 1:
                     self.screenshot()
                     if self.appear(self.I_I_DEFAULT):
                         break
                     if self.appear_then_click(self.I_I_NO_DEFAULT, interval=1):
                         continue
+                    if timeout.reached():
+                        logger.warning('Click default invite timeout, dialog may be closing')
+                        break
+                    # 勾选框和确认键都识别不到，说明邀请对话框已经整体关闭
+                    if not self.appear(self.I_GI_SURE):
+                        logger.warning('Invite dialog closed while clicking default invite')
+                        break
         # 点击确认
+        timeout = Timer(15).start()
         while 1:
             self.screenshot()
             if not self.appear(self.I_GI_SURE):
                 break
             if self.appear_then_click(self.I_GI_SURE, interval=1):
                 continue
+            if timeout.reached():
+                logger.warning('Click invite ensure timeout')
+                break
 
         return True
 
