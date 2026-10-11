@@ -18,6 +18,8 @@ class ConfigMenu:
         self.menu['TaskList'] = []
         # 脚本设置
         self.menu['Script'] = ['Script', 'Restart', 'GlobalGame']
+        # 常用（快捷入口，这里的任务同时保留在原有分类中）
+        self.menu["Commonly Used"] = ['Orochi', 'RealmRaid', 'BondlingFairyland']
         # 刷御魂
         self.menu["Soul Zones"] = ['Orochi', 'Sougenbi', 'FallenSun', 'EternitySea', 'SixRealms']
         # 日常的任务
