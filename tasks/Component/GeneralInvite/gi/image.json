@@ -308,8 +308,8 @@
   {
     "itemName": "i_no_default",
     "imageName": "gi_i_no_default.png",
-    "roiFront": "542,343,36,35",
-    "roiBack": "542,343,36,35",
+    "roiFront": "545,343,36,35",
+    "roiBack": "497,303,216,100",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "不勾选 默认邀请"
@@ -317,8 +317,8 @@
   {
     "itemName": "i_default",
     "imageName": "gi_i_default.png",
-    "roiFront": "541,342,41,39",
-    "roiBack": "541,342,41,39",
+    "roiFront": "564,341,41,39",
+    "roiBack": "512,329,164,78",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "勾选 默认邀请"
@@ -326,8 +326,8 @@
   {
     "itemName": "gi_cancel",
     "imageName": "gi_cancel.png",
-    "roiFront": "438,407,171,55",
-    "roiBack": "438,407,171,55",
+    "roiFront": "438,407,177,62",
+    "roiBack": "413,382,227,112",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
@@ -335,8 +335,8 @@
   {
     "itemName": "gi_sure",
     "imageName": "gi_gi_sure.png",
-    "roiFront": "670,402,175,60",
-    "roiBack": "670,402,175,60",
+    "roiFront": "664,407,179,66",
+    "roiBack": "639,382,229,116",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "队长邀请 确定"
