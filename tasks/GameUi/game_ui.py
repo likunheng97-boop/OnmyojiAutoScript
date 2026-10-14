@@ -124,6 +124,10 @@ class GameUi(BaseTask, GameUiAssets):
         # 交由 script.py 的异常处理走 Restart，而不是继续做无效点击。
         close_attempt = 0
         max_close_attempt = 6
+        # 未知页面时"戳一下安全处"之前先空转刷新的次数。见下方 else 分支的说明：
+        # 页面判定失败常常只是淡出动画未播完，此时乱戳会点进庭院的功能入口。
+        stale_refresh = 0
+        max_stale_refresh = 2
         while 1:
             self.maybe_screenshot(skip_first_screenshot)
             skip_first_screenshot = False
@@ -148,6 +152,27 @@ class GameUi(BaseTask, GameUiAssets):
                                    f'stop resetting timeout')
             else:
                 # entirely unknown page, click safe random area
+                # 但 C_REWARD_1/C_REWARD_3 是为战斗结算界面准备的"安全空地"，
+                # 在庭院上却正好压着底部功能栏的入口：
+                #   C_REWARD_1 (606,603,325,87) 覆盖
+                #     花合战 I_MAIN_GOTO_DAILY (779,612,51,67)  命中 28.9%
+                #     任务   I_HOME_TSK        (764,608,66,56)  命中 34.7%
+                #     商店   I_HOME_MALL       (654,620,51,55)  命中 10.7%
+                #     ...合计约 54% 会戳进某个入口
+                # 而页面判定失败很多时候只是上一屏的淡出动画还没播完
+                # （取自 close_buff() 的缓存截图仍是面板打开状态，I_CHECK_MAIN 被挡住），
+                # 这时乱戳就会跳进别的页面。见 log/error/1790735764858（page_daily ->
+                # GameStuckError）、1791511322492、1791947984734（page_daily）以及
+                # 2026-09-30 02:48 的 UI_UI_BACK_YELLOW 与 SAFE_RANDOM_CLICK 互相打架
+                # 触发的 GameTooManyClickError。
+                # 所以前几次先刷新截图等一等，给动画留时间，之后才戳。
+                if stale_refresh < max_stale_refresh:
+                    stale_refresh += 1
+                    logger.info(f'Unknown page, refresh screen and wait ({stale_refresh}/{max_stale_refresh})')
+                    self.screenshot()
+                    sleep(0.4)
+                    continue
+                logger.info('Unknown page, click a safe random area')
                 self.click(random_click(), interval=4)
             # wait to ui
             sleep(0.3)
