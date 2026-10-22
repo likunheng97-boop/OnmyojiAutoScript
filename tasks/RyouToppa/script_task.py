@@ -246,8 +246,14 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RyouToppaAssets):
         self.wait_until_appear(self.I_TOPPA_RECORD)
         self.screenshot()
         cu, res, total = self.O_NUMBER.ocr(self.device.image)
+        # 注意：DigitCounter 读不出来时返回 (0, 0, 0)，
+        # 只有在 total > 0（说明真读到了 "x/y"）时才能下「没票」的结论，
+        # 否则会把 OCR 失败误判成没票而提前结束任务。
+        if total == 0:
+            logger.warning(f'Cannot read ticket number, assume ticket exists')
+            return True
         if cu == 0 and cu + res == total:
-            logger.warning(f'Execute round failed, no ticket')
+            logger.warning(f'Execute round failed, no ticket ({cu}/{total})')
             return False
         return True
 

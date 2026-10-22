@@ -24,9 +24,48 @@ from module.atom.click import RuleClick
 
 class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
     medal_grid: ImageGrid = None
+    # 连续多少次读不出突破券数量（用于区分「OCR 失败」和「真的没票」）
+    ticket_unreadable: int = 0
 
     def run(self):
         self.run_2()
+
+    def read_ticket(self, retry: int = 3) -> tuple:
+        """
+        读取右上角的突破券数量，返回 (当前张数, 总上限)，彻底读不到返回 None
+
+        为什么需要这个函数：
+        O_NUMBER 是 DigitCounter 模式，它先用 ocr_single_line 走一遍，再把结果里
+        非数字非 "/" 的字符全部丢掉。这个 ROI 只有 80x39，中间那条 "/" 很细，
+        实测经常被漏掉 —— 例如界面显示 "7/30"，识别成 "730"，
+        ocr_str_digit_counter 匹配不到 "(\\d+)/(\\d+)" 就返回 (0, 0, 0)。
+        而 (0, 0, 0) 只代表「这一次没读出来」，**绝不等于 0 张票**。
+        :param retry: 重试次数
+        :return: (当前张数, 总上限) / None
+        """
+        for i in range(retry):
+            self.screenshot()
+            # 主通道：DigitCounter，形如 "7/30" -> (7, 23, 30)
+            cu, res, total = self.O_NUMBER.ocr(self.device.image)
+            if total > 0 and cu + res == total:
+                return cu, total
+            # 兜底通道：Single 模式。DigitCounter 丢 "/" 时这里通常还能读到 "7/30"
+            text = self.O_TEXT.ocr(self.device.image)
+            match = re.search(r'(\d{1,3})\s*/\s*(\d{1,3})', str(text))
+            if match:
+                current, total = int(match.group(1)), int(match.group(2))
+                if total > 0 and current <= total:
+                    logger.info(f'Read ticket by O_TEXT: {current}/{total}')
+                    return current, total
+            if i == 0:
+                # 第一次读不到：可能是三胜奖励/开箱弹窗、聊天框挡住了右上角，
+                # 沿用旧逻辑先把弹窗点掉（它内部会等到重新出现 "x/y" 才返回）
+                logger.info('Cannot read ticket, try to clear the popup and read again')
+                self.reward_detect_click(False)
+            else:
+                logger.info(f'Cannot read ticket number ({i + 1}/{retry}), retry')
+                time.sleep(0.4)
+        return None
 
     def is_ticket(self) -> bool:
         """
@@ -34,10 +73,13 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
         :return:
         """
         self.wait_until_appear(self.I_BACK_RED)
-        self.screenshot()
-        cu, res, total = self.O_NUMBER.ocr(self.device.image)
-        if cu == 0 and cu + res == total:
-            logger.warning(f'Execute round failed, no ticket')
+        ticket = self.read_ticket()
+        if ticket is None:
+            # 读不出来不等于没票，宁可继续也不要误杀任务
+            logger.warning(f'Cannot read ticket number, assume ticket exists')
+            return True
+        if ticket[0] == 0:
+            logger.warning(f'Execute round failed, no ticket ({ticket[0]}/{ticket[1]})')
             return False
         return True
 
@@ -120,6 +162,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
     # ------------------------------------------------------------------------------------------------------------------
     def run_2(self):
         con = self.config.realm_raid
+        self.ticket_unreadable = 0
         if con.switch_soul_config.enable:
             self.ui_get_current_page()
             self.ui_goto(page_shikigami_records)
@@ -304,18 +347,37 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
             base = 0
         self.wait_until_appear(self.I_BACK_RED)
         self.screenshot()
-        cu, res, total = self.O_NUMBER.ocr(self.device.image)
 
-        if total == 0:
-            self.reward_detect_click(True)
-            # 增加出现聊天框遮挡，处理奖励之后，重新识别票数
-            cu, res, total = self.O_NUMBER.ocr(self.device.image)
-        if cu == 0 and cu + res == total:
-            logger.warning(f'Execute raid failed, no ticket')
+        ticket = self.read_ticket()
+        if ticket is None:
+            # 抗抖动：奖励弹窗、开箱动画、聊天框都可能遮住右上角，
+            # 偶尔一两次读不出来就先跳过本轮检查，不要把整个任务结束掉
+            self.ticket_unreadable += 1
+            if self.ticket_unreadable <= 3:
+                logger.warning(f'Cannot read ticket number ({self.ticket_unreadable}/3), '
+                               f'continue this round instead of stopping the task')
+                return True
+            self.ticket_unreadable = 0
+            logger.warning('Execute raid failed, ticket number keeps unreadable')
             return False
-        elif cu + res == total and cu < base:
-            logger.warning(f'Execute raid failed, ticket is not enough')
+
+        cu, total = ticket
+        if cu == 0:
+            # 单次读到 0 不下结论：可能是个别数字被误读，隔一会儿再确认一次
+            logger.info(f'Ticket seems to be 0 ({cu}/{total}), double check')
+            time.sleep(0.6)
+            confirm = self.read_ticket(retry=2)
+            if confirm is not None:
+                cu, total = confirm
+        self.ticket_unreadable = 0
+
+        if cu == 0:
+            logger.warning(f'Execute raid failed, no ticket ({cu}/{total})')
             return False
+        elif cu < base:
+            logger.warning(f'Execute raid failed, ticket is not enough ({cu}/{total} < {base})')
+            return False
+        logger.info(f'Ticket {cu}/{total}')
         return True
 
     @cached_property
