@@ -75,6 +75,14 @@ class SwitchSoulAssets:
 	O_SS_GROUP_NAME = RuleOcr(roi=(1087,91,155,566), area=(1110,94,116,533), mode="Full", method="Default", keyword="", name="ss_group_name")
 	# 阵容匹配 
 	O_SS_TEAM_NAME = RuleOcr(roi=(573,140,277,481), area=(667,144,32,475), mode="Full", method="Default", keyword="", name="ss_team_name")
+	# 「预设」按钮(OCR, 不依赖模板, 更换幕间皮肤后依然可用)
+	O_SS_PRESET_BTN = RuleOcr(roi=(310,57,169,72), area=(310,57,169,72), mode="Full", method="Default", keyword="预设", name="ss_preset_btn")
+	# 预设面板标题「队伍预设」(OCR, 用于判断面板是否已经打开)
+	O_SS_PANEL_TITLE = RuleOcr(roi=(727,71,165,63), area=(727,71,165,63), mode="Full", method="Default", keyword="预设", name="ss_panel_title")
+	# 切换御魂后的「确定」弹窗(OCR)
+	O_SS_SURE = RuleOcr(roi=(660,392,200,78), area=(660,392,200,78), mode="Full", method="Default", keyword="确定", name="ss_sure")
+	# 误触点到式神时的「确定」弹窗(OCR)
+	O_SS_BLOCK_SURE = RuleOcr(roi=(560,400,160,70), area=(560,400,160,70), mode="Full", method="Default", keyword="确定", name="ss_block_sure")
 
 
 	# Swipe Rule Assets

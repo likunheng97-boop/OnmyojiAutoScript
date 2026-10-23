@@ -16,5 +16,41 @@
     "method": "Default",
     "keyword": "",
     "description": "阵容匹配"
+  },
+  {
+    "itemName": "ss_preset_btn",
+    "roiFront": "310,57,169,72",
+    "roiBack": "310,57,169,72",
+    "mode": "Full",
+    "method": "Default",
+    "keyword": "预设",
+    "description": "「预设」按钮(OCR, 不依赖模板, 更换幕间皮肤后依然可用)"
+  },
+  {
+    "itemName": "ss_panel_title",
+    "roiFront": "727,71,165,63",
+    "roiBack": "727,71,165,63",
+    "mode": "Full",
+    "method": "Default",
+    "keyword": "预设",
+    "description": "预设面板标题「队伍预设」(OCR, 用于判断面板是否已经打开)"
+  },
+  {
+    "itemName": "ss_sure",
+    "roiFront": "660,392,200,78",
+    "roiBack": "660,392,200,78",
+    "mode": "Full",
+    "method": "Default",
+    "keyword": "确定",
+    "description": "切换御魂后的「确定」弹窗(OCR)"
+  },
+  {
+    "itemName": "ss_block_sure",
+    "roiFront": "560,400,160,70",
+    "roiBack": "560,400,160,70",
+    "mode": "Full",
+    "method": "Default",
+    "keyword": "确定",
+    "description": "误触点到式神时的「确定」弹窗(OCR)"
   }
 ]
