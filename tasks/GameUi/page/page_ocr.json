@@ -16,5 +16,14 @@
     "method": "Default",
     "keyword": "手动",
     "description": "战斗页面手动标志"
+  },
+  {
+    "itemName": "check_records",
+    "roiFront": "60,74,215,40",
+    "roiBack": "60,74,215,40",
+    "mode": "Full",
+    "method": "Default",
+    "keyword": "我的式神",
+    "description": "式神录页面判定(OCR): 更换幕间皮肤后放大镜图标模板失效时用它兜底"
   }
 ]

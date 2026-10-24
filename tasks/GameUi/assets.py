@@ -246,6 +246,8 @@ class GameUiAssets:
 	O_BATTLE_AUTO = RuleOcr(roi=(37,642,51,36), area=(0,589,133,128), mode="Single", method="Default", keyword="自动", name="battle_auto")
 	# 战斗页面手动标志 
 	O_BATTLE_HAND = RuleOcr(roi=(35,644,52,34), area=(0,589,136,129), mode="Single", method="Default", keyword="手动", name="battle_hand")
+	# 式神录页面判定(OCR): 更换幕间皮肤后放大镜图标模板失效时用它兜底 
+	O_CHECK_RECORDS = RuleOcr(roi=(60,74,215,40), area=(60,74,215,40), mode="Full", method="Default", keyword="我的式神", name="check_records")
 
 
 	# Image Rule Assets

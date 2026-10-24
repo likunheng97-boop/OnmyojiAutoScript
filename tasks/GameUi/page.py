@@ -3,6 +3,7 @@ from itertools import compress
 import random
 
 import traceback
+from module.logger import logger
 from module.atom.click import RuleClick
 from tasks.BondlingFairyland.assets import BondlingFairylandAssets
 from tasks.Duel.assets import DuelAssets
@@ -158,7 +159,21 @@ page_town.link(button=G.I_TOWN_GOTO_HYAKKIYAKOU, destination=page_hyakkiyakou)
 
 # ************************************* 庭院部分 *****************************************#
 # 式神录 shikigami_records
-page_shikigami_records = Page(G.I_CHECK_RECORDS)
+# 页面判定: 优先用原来的放大镜图标(I_CHECK_RECORDS)模板, 模板失配(更换幕间/式神录皮肤)时
+# 用 OCR 顶栏「我的式神 xxxx」兜底, 否则换皮后 ui_goto(page_shikigami_records) 永远判定失败,
+# 会点进式神录后立刻退回庭院, 换阵容流程根本走不到点「预设」那一步。
+#
+# 注意: 本文件在 GameUi.__init__ 里被 exec_module 反复重新执行, 而 tasks.GameUi.assets
+# 只在进程启动时 import 一次。两者版本不一致时(改了 assets.py 却没重启后端), 直接写
+# G.O_CHECK_RECORDS 会在模块级抛 AttributeError, 连带把后端的所有任务一起打崩。
+# 所以这里一律用 getattr 兜底: 属性缺失就退化成纯模板判定, 只告警、不中断。
+_ocr_check_records = getattr(G, 'O_CHECK_RECORDS', None)
+if _ocr_check_records is None:
+    logger.warning('GameUiAssets.O_CHECK_RECORDS 不存在(assets.py 版本比 page.py 旧?), '
+                   '式神录页面判定退化为纯模板; 换皮后会判不出页面, 请重启后端')
+    page_shikigami_records = Page(G.I_CHECK_RECORDS)
+else:
+    page_shikigami_records = Page([G.I_CHECK_RECORDS, _ocr_check_records])
 page_shikigami_records.additional = [G.I_AD_DISAPPEAR, G.I_RECORDS_CLOSE, GGA.I_UI_CANCEL_SAMLL]
 page_shikigami_records.link(button=G.I_BACK_Y, destination=page_main)
 page_main.link(button=G.I_MAIN_GOTO_SHIKIGAMI_RECORDS, destination=page_shikigami_records)

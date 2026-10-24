@@ -80,6 +80,18 @@ class SwitchSoul(BaseTask, SwitchSoulAssets):
             except ValueError:
                 logger.error('Switch soul config error')
                 return
+        # switch_group_team 默认就是 "-1,-1"（表示没填）。原实现会一路走进
+        # switch_soul_one 然后抛 ValueError，把整个任务打断；这里先判掉，
+        # 让「只勾了启用、没填序号」的配置安静地跳过，不影响后续打怪。
+        targets = target if isinstance(target, list) else [target]
+        try:
+            invalid = any(not (1 <= int(g) <= 7) or not (1 <= int(t) <= 4) for g, t in targets)
+        except (TypeError, ValueError):
+            logger.error(f'Switch soul config error: {target}')
+            return
+        if invalid:
+            logger.info(f'Switch soul by index skipped: group/team not configured ({target})')
+            return
         if not self.click_preset():
             return
         self.switch_souls(target)
@@ -229,9 +241,14 @@ class SwitchSoul(BaseTask, SwitchSoulAssets):
                     if not self.sure_visible():
                         break
                 continue
-            # 队伍「切换」按钮的位置是固定的，直接按坐标点击。
-            # 不再要求模板命中：更换幕间皮肤后模板会失效，但坐标不变。
-            self.click(target_team, interval=3)
+            # 队伍「切换」按钮：y 取该行坐标，x 交给模板定位。
+            # 幕间皮肤会把整排图标右移（老皮肤 978 / 新皮肤 1014），
+            # 模板都失配时宁可不点，也不要在旧坐标上盲点（那里可能是『≡』菜单）。
+            switch_x = self.team_switch_button_x()
+            if switch_x is None:
+                break
+            _, switch_y = target_team.coord()
+            self.device.click(x=switch_x, y=switch_y, control_name=target_team.name)
         # 兜底若还出现确认按钮则点击
         for _ in range(6):
             self.screenshot()
@@ -347,33 +364,66 @@ class SwitchSoul(BaseTask, SwitchSoulAssets):
         logger.info(f'Select team {teamName}')
         # 切换御魂
         cnt_click: int = 0
+        miss: int = 0
+        sure_seen: bool = False
         self.O_SS_TEAM_NAME.keyword = teamName
         while 1:
             self.screenshot()
-            if cnt_click >= 4:
+            if cnt_click >= 4 or miss >= 5:
                 break
             if self.click_sure(interval=0.8):
+                sure_seen = True
+                miss = 0
                 continue
             if self.ocr_appear_click_team_switch(self.O_SS_TEAM_NAME, interval=1.5):
                 cnt_click += 1
+                miss = 0
                 continue
+            # 点不到（模板失配 / OCR 间歇性读不到）就累加失败次数，避免死循环
+            miss += 1
+        if cnt_click and not sure_seen:
+            # 点了「切换」但始终没弹「确定」：多半是点到了同一排的其它图标（≡ 菜单 / 分享），
+            # 把日志写清楚，方便下次直接看出是皮肤适配问题而不是「点了没反应」。
+            logger.warning(f'Switch soul: 已点击「切换」{cnt_click} 次但始终未出现「确定」弹窗，'
+                           f'请确认队伍预设面板的切换图标位置（皮肤适配）')
+        if miss >= 5:
+            logger.warning(f'Switch soul: 连续 {miss} 次点不到「切换」，跳过分组 {groupName} 阵容 {teamName}')
         logger.info(f'Switch soul_one group {groupName} team {teamName}')
+
+    def team_switch_button_x(self) -> Union[int, None]:
+        """
+        定位「队伍预设」列表里行内『切换』按钮的 x 坐标。
+
+        老皮肤该按钮固定在 x≈978，换幕间皮肤后整排图标往右挪了：
+        新版皮肤下 978 正好压在『≡』(编辑菜单)上，真正的『切换』跑到了 x≈1014。
+        所以这里先试新皮肤的模板，再试旧模板，都不中返回 None。
+
+        返回 None 时调用方必须放弃点击：照旧坐标盲点会点开『≡』菜单，
+        而菜单里就有「删除预设队伍」，比切不过去危险得多。
+        """
+        for rule in (self.I_SOU_CLICK_PRESENT_2, self.I_SOU_CLICK_PRESENT):
+            if rule.match(self.device.image):
+                x, _ = rule.coord()
+                return x
+        logger.warning('Switch soul: 切换按钮模板全部失配，跳过点击(幕间皮肤未适配?)')
+        return None
 
     def ocr_appear_click_team_switch(self, target: RuleOcr, interval: float = None) -> bool:
         """
         OCR 命中阵容名后，点击该行右侧的「切换」按钮。
 
         旧实现要再匹配一次 I_SOU_CLICK_PRESENT(深色切换图标, threshold=0.9) 才肯点，
-        图标颜色随幕间皮肤变化就会失效。这里改成：x 取切换按钮所在列的坐标
-        （仍走 I_SOU_CLICK_PRESENT 的 roi，皮肤替换时一并生效），
-        y 取 OCR 命中行的垂直中心，不再依赖模板匹配。
+        图标颜色随幕间皮肤变化就会失效。这里改成：x 由模板动态定位(见 team_switch_button_x)，
+        y 取 OCR 命中行的垂直中心，不再要求『切换』图标本身匹配成功。
         :param target: 阵容名 OCR 规则（keyword 需已设置为目标阵容名）
         :param interval:
         :return:
         """
         if not self.ocr_appear(target, interval):
             return False
-        x, _ = self.I_SOU_CLICK_PRESENT.coord()
+        x = self.team_switch_button_x()
+        if x is None:
+            return False
         x1, y1, w1, h1 = target.area
         self.device.click(x=x, y=y1 + h1 // 2, control_name=target.name)
         return True
