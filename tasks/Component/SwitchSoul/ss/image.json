@@ -162,6 +162,15 @@
     "description": "需要切换的预设按钮(幕间皮肤变体: 青竹/绯夜猎刃主题, 图标整体右移)"
   },
   {
+    "itemName": "sou_click_present_3",
+    "imageName": "ss_sou_click_present_3.png",
+    "roiFront": "982,144,20,24",
+    "roiBack": "955,136,115,500",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "需要切换的预设按钮(当前默认/木质主题, 图标 x≈982, 跨主题实测 0.85~1.00)"
+  },
+  {
     "itemName": "check_block",
     "imageName": "ss_check_block.png",
     "roiFront": "572,408,137,49",

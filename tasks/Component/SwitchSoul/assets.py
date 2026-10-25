@@ -66,6 +66,8 @@ class SwitchSoulAssets:
 	I_SOU_CLICK_PRESENT = RuleImage(roi_front=(978,304,25,26), roi_back=(965,142,48,480), threshold=0.9, method="Template matching", file="./tasks/Component/SwitchSoul/ss/ss_sou_click_present.png")
 	# 需要切换的预设按钮(幕间皮肤变体: 青竹/绯夜猎刃主题, 图标整体右移) 
 	I_SOU_CLICK_PRESENT_2 = RuleImage(roi_front=(999,146,32,27), roi_back=(955,136,115,500), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchSoul/ss/ss_sou_click_present_2.png")
+	# 需要切换的预设按钮(当前默认主题/木质主题, 图标 x≈982, 跨主题实测 0.85~1.00) 
+	I_SOU_CLICK_PRESENT_3 = RuleImage(roi_front=(982,144,20,24), roi_back=(955,136,115,500), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchSoul/ss/ss_sou_click_present_3.png")
 	# 误触点到式神检查 
 	I_CHECK_BLOCK = RuleImage(roi_front=(572,408,137,49), roi_back=(572,408,137,49), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchSoul/ss/ss_check_block.png")
 	# 通用进入式神录 

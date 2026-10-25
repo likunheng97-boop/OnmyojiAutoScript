@@ -4,6 +4,8 @@
 from time import sleep
 from typing import Union
 
+import cv2
+
 from module.atom.click import RuleClick
 from module.atom.long_click import RuleLongClick
 from module.atom.ocr import RuleOcr
@@ -390,21 +392,80 @@ class SwitchSoul(BaseTask, SwitchSoulAssets):
             logger.warning(f'Switch soul: 连续 {miss} 次点不到「切换」，跳过分组 {groupName} 阵容 {teamName}')
         logger.info(f'Switch soul_one group {groupName} team {teamName}')
 
+    # 灰度匹配阈值。实测四套皮肤/主题最低 0.910（青竹），背景次高点只有 0.46，
+    # 取 0.85 既能跨主题命中，又离背景噪声很远。
+    SWITCH_GRAY_THRESHOLD: float = 0.85
+
+    def _gray_switch_x(self) -> Union[int, None]:
+        """
+        用**灰度**模板匹配定位『切换』图标，返回可点击的 x。
+
+        为什么不用 RuleImage.match()（RGB 三通道）：这个图标只有灰白笔画，
+        真正随皮肤变化的是**背景配色**，而 RGB 匹配会把这部分背景也算进相关系数，
+        于是同一个模板在绿调皮肤上只有 0.854、在青竹主题只有 0.850（勉强过线）。
+        丢掉色彩只留亮度后，同一个模板在四套皮肤上分别是
+        1.000 / 0.964 / 0.966 / 0.910 —— 最低分也高出阈值 6 个百分点。
+
+        只在 icon 列（x 960~1040）接受命中，避免在背景上误匹配。
+        :return: 命中返回图标中心的 x，未命中返回 None
+        """
+        rule = self.I_SOU_CLICK_PRESENT_3
+        x0, y0, w0, h0 = rule.roi_back
+        image = self.device.image
+        if image is None or len(getattr(image, 'shape', ())) != 3:
+            return None
+        src = image[y0:y0 + h0, x0:x0 + w0]
+        tpl = rule.image
+        if src.size == 0 or tpl.size == 0:
+            return None
+        src_gray = cv2.cvtColor(src, cv2.COLOR_RGB2GRAY)
+        tpl_gray = cv2.cvtColor(tpl, cv2.COLOR_RGB2GRAY)
+        if tpl_gray.shape[0] > src_gray.shape[0] or tpl_gray.shape[1] > src_gray.shape[1]:
+            return None
+        res = cv2.matchTemplate(src_gray, tpl_gray, cv2.TM_CCOEFF_NORMED)
+        _, max_val, _, max_loc = cv2.minMaxLoc(res)
+        center = x0 + max_loc[0] + tpl_gray.shape[1] // 2
+        if max_val < self.SWITCH_GRAY_THRESHOLD:
+            return None
+        if not 960 <= center <= 1040:
+            logger.warning(f'Switch soul: 灰度匹配命中位置异常 x={center}(score={max_val:.3f})，忽略')
+            return None
+        logger.info(f'Switch soul: 切换按钮灰度匹配 score={max_val:.3f} -> x={center}')
+        return center
+
     def team_switch_button_x(self) -> Union[int, None]:
         """
         定位「队伍预设」列表里行内『切换』按钮的 x 坐标。
 
-        老皮肤该按钮固定在 x≈978，换幕间皮肤后整排图标往右挪了：
-        新版皮肤下 978 正好压在『≡』(编辑菜单)上，真正的『切换』跑到了 x≈1014。
-        所以这里先试新皮肤的模板，再试旧模板，都不中返回 None。
+        这个图标的**位置和配色都会随幕间(式神录)皮肤变化**，目前已见四套：
+            默认主题 / 木质 / 绿调 -> 图标中心 x≈992
+            青竹 / 绯夜猎刃         -> 图标中心 x≈1015
+        所以先用**灰度匹配**（不受配色影响，见 `_gray_switch_x`）走主路径，
+        失配再退回「三模板 RGB 依次尝试」的老路径，全部失败才返回 None。
 
-        返回 None 时调用方必须放弃点击：照旧坐标盲点会点开『≡』菜单，
-        而菜单里就有「删除预设队伍」，比切不过去危险得多。
+        返回 None 时调用方必须放弃点击：按固定坐标盲点有可能打开『≡』编辑菜单，
+        而菜单里就有「删除预设队伍」，比这次切不过去危险得多。
+
+        center 护栏（960~1040）两条路径都有：只接受图标那一列的命中结果，
+        防止模板在背景上误匹配到别处。
         """
-        for rule in (self.I_SOU_CLICK_PRESENT_2, self.I_SOU_CLICK_PRESENT):
-            if rule.match(self.device.image):
-                x, _ = rule.coord()
-                return x
+        x = self._gray_switch_x()
+        if x is not None:
+            return x
+
+        for rule in (self.I_SOU_CLICK_PRESENT_3,
+                     self.I_SOU_CLICK_PRESENT_2,
+                     self.I_SOU_CLICK_PRESENT):
+            if not rule.match(self.device.image):
+                continue
+            # 护栏用模板命中框的固定中心，避免 coord() 的随机点在边界抖动
+            center = rule.roi_front[0] + rule.roi_front[2] // 2
+            if not 960 <= center <= 1040:
+                logger.warning(f'Switch soul: {rule.name} 命中位置异常 x={center}，忽略')
+                continue
+            x, _ = rule.coord()
+            logger.info(f'Switch soul: 切换按钮由 {rule.name} 定位到 x={center}')
+            return x
         logger.warning('Switch soul: 切换按钮模板全部失配，跳过点击(幕间皮肤未适配?)')
         return None
 
