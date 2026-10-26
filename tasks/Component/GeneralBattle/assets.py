@@ -23,6 +23,15 @@ class GeneralBattleAssets:
 	C_REWARD_2 = RuleClick(roi_front=(25,134,224,472), roi_back=(25,134,224,472), name="reward_2")
 	# description 
 	C_REWARD_3 = RuleClick(roi_front=(1092,156,168,437), roi_back=(1092,156,168,437), name="reward_3")
+	# 结算界面「点空白推进」安全区：实测掉落物占 x95-1180 / y160-600，
+	# 原来的 C_REWARD_2 (25,134,224,472) 有 30% 面积压在左侧物品卡上，
+	# 点中物品会弹「获取途径」详情，界面就推不动了。这三块是实测 edge≈0 的纯空白。
+	# 结算界面左侧纯空白(掉落物从 x95 起) 实测 edge=0 
+	C_REWARD_SAFE_L = RuleClick(roi_front=(0,120,78,200), roi_back=(0,120,78,200), name="reward_safe_l")
+	# 结算界面右侧纯空白(掉落物到 x1180 止) 实测 edge<8 
+	C_REWARD_SAFE_R = RuleClick(roi_front=(1202,120,76,200), roi_back=(1202,120,76,200), name="reward_safe_r")
+	# 结算界面底部纯空白 实测 edge=0 
+	C_REWARD_SAFE_B = RuleClick(roi_front=(720,645,200,70), roi_back=(720,645,200,70), name="reward_safe_b")
 
 
 	# Click Rule Assets

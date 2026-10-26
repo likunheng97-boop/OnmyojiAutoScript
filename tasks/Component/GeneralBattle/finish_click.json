@@ -34,5 +34,23 @@
     "roiFront": "1092,156,168,437",
     "roiBack": "1092,156,168,437",
     "description": "description"
+  },
+  {
+    "itemName": "reward_safe_l",
+    "roiFront": "0,120,78,200",
+    "roiBack": "0,120,78,200",
+    "description": "结算界面左侧纯空白(掉落物从 x95 起) 实测 edge=0"
+  },
+  {
+    "itemName": "reward_safe_r",
+    "roiFront": "1202,120,76,200",
+    "roiBack": "1202,120,76,200",
+    "description": "结算界面右侧纯空白(掉落物到 x1180 止) 实测 edge<8"
+  },
+  {
+    "itemName": "reward_safe_b",
+    "roiFront": "720,645,200,70",
+    "roiBack": "720,645,200,70",
+    "description": "结算界面底部纯空白 实测 edge=0"
   }
 ]

@@ -455,11 +455,48 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                 if not self.appear(self.I_GREED_GHOST):
                     logger.warning('Greedy ghost disappear. Maybe it is a false battle')
                     continue
+                # 结算界面点空白就能推进，但**不能点到中间的掉落物**：
+                # 点了会弹「获取途径」详情，界面就卡在这一层。
+                # 原来 random.choice([C_REWARD_1, C_REWARD_2, C_REWARD_3]) 里
+                # C_REWARD_2 有 30% 面积压在左侧物品卡上、C_REWARD_3 压着右侧，
+                # 实测 10 次随机全落在物品区（log/error/1793021787203），while 1 永远退不出去。
+                # 所以改用实测 edge≈0 的纯空白区 + 原 C_REWARD_1（底部也是空的）。
+                # 权重 3:3:3:1 —— 三块纯空白优先，C_REWARD_1 里含「点击屏幕继续」文字，少用。
+                reward_safe = [self.C_REWARD_SAFE_L, self.C_REWARD_SAFE_R,
+                               self.C_REWARD_SAFE_B, self.C_REWARD_1]
+                reward_w = [3, 3, 3, 1]
+                miss = 0
+                fix_try = 0
                 while 1:
                     self.screenshot()
-                    action_click = random.choice([self.C_REWARD_1, self.C_REWARD_2, self.C_REWARD_3])
+                    # 万一还是点到了物品，先把它关掉再继续
+                    if self.appear(self.I_END_FIX_1) or self.appear(self.I_END_FIX_2):
+                        fix_try += 1
+                        if fix_try > 6:
+                            logger.warning('物品详情弹窗关不掉，放弃本局结算')
+                            return True
+                        logger.info(f'物品详情弹窗出现，点空白关闭 ({fix_try}/6)')
+                        self.click(random.choices(reward_safe, weights=reward_w, k=1)[0], interval=1.2)
+                        continue
                     if not self.appear(self.I_GREED_GHOST):
                         break
+                    # 防封：保留 2% 概率「手滑」点到掉落物，弹详情后再点空白关掉。
+                    # 真实玩家不可能一局都不会误触，长期 100% 绕开物品本身也是一种特征。
+                    # 这里点完 continue，下一轮循环开头的 I_END_FIX_1/2 会识别详情弹窗并点空白关闭，
+                    # 正好构成「点物品 -> 点空白」的完整拟人动作。本分支不计入 miss 配额。
+                    if random.random() < 0.02:
+                        logger.info('模拟误触掉落物(防封)，随后点空白关闭详情')
+                        self.click(random.choice([
+                            self.C_END_1_1, self.C_END_1_2, self.C_END_1_3,
+                            self.C_END_1_4, self.C_END_1_5, self.C_END_1_6,
+                        ]), interval=1.2)
+                        continue
+                    miss += 1
+                    if miss > 6:
+                        logger.warning('Greedy ghost 一直不消失(点空白也推不动)，放弃本局结算，'
+                                       '避免触发点击看门狗强制重启游戏')
+                        return True
+                    action_click = random.choices(reward_safe, weights=reward_w, k=1)[0]
                     if self.click(action_click, interval=1.5):
                         continue
                 return True
