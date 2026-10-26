@@ -455,6 +455,13 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                 if not self.appear(self.I_GREED_GHOST):
                     logger.warning('Greedy ghost disappear. Maybe it is a false battle')
                     continue
+                # 识别到贪吃鬼后**先等 2 秒再开始点**。
+                # 贪吃鬼吃到金币/经验时会播一段结算动画（截图中央「+1051 金币」飞入），
+                # 动画期间输入被锁，这 1~2 秒里点空白完全是白点，还会白白消耗 miss 配额，
+                # 连续几局撞上就把重试次数烧光，看起来像「卡在结算界面」。
+                # 等动画播完再点，正常 2~3 次空白就能推进。
+                logger.info('Greedy ghost detected, wait 2s for settlement animation')
+                sleep(2)
                 # 结算界面点空白就能推进，但**不能点到中间的掉落物**：
                 # 点了会弹「获取途径」详情，界面就卡在这一层。
                 # 原来 random.choice([C_REWARD_1, C_REWARD_2, C_REWARD_3]) 里
@@ -475,7 +482,11 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
 
                 def _click_blank(wait: float = 1.3):
                     self.click(random.choices(reward_safe, weights=reward_w, k=1)[0])
-                    self.sleep(wait)
+                    # ⚠️ 是本模块顶部的 `from time import sleep`，不是 self.sleep ——
+                    # ScriptTask 的 MRO 里**没有** sleep 方法（base_task 也只 import 了函数），
+                    # 写成 self.sleep() 会直接 AttributeError 把整个任务进程打挂
+                    # （log/error/1793025858372 + 1793025858640，22:44:17 两台实例同时崩）。
+                    sleep(wait)
 
                 miss = 0
                 fix_try = 0
@@ -502,7 +513,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                             self.C_END_1_1, self.C_END_1_2, self.C_END_1_3,
                             self.C_END_1_4, self.C_END_1_5, self.C_END_1_6,
                         ]))
-                        self.sleep(1.5)
+                        sleep(1.5)
                         continue
                     miss += 1
                     if miss > 20:
@@ -515,7 +526,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                                        '点贪吃鬼图标做最后一搏')
                         for _ in range(3):
                             self.appear_then_click(self.I_GREED_GHOST, interval=1)
-                            self.sleep(0.8)
+                            sleep(0.8)
                         return True
                     _click_blank(1.3)
                 return True
