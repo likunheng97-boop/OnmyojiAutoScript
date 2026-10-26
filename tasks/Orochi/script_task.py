@@ -462,9 +462,21 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                 # 实测 10 次随机全落在物品区（log/error/1793021787203），while 1 永远退不出去。
                 # 所以改用实测 edge≈0 的纯空白区 + 原 C_REWARD_1（底部也是空的）。
                 # 权重 3:3:3:1 —— 三块纯空白优先，C_REWARD_1 里含「点击屏幕继续」文字，少用。
+                #
+                # ⚠️ 千万别用 self.click(btn, interval=x) 的返回值做流程控制！
+                # base_task.click() 的返回值表示「interval 是否到了」，**不是「点击是否成功」**：
+                # 间隔没到时它直接 return False 且根本不点击。写成 `if self.click(...): continue`
+                # 就会掉进下面的重试分支，几毫秒一轮空转，把 miss 计数瞬间冲爆
+                # （log/error/1793024857340：3 次真实点击之后 1.2 秒内 miss 从 3 冲到 7 直接放弃）。
+                # 这里统一改成「无 interval 的 click + 显式 sleep」控制节奏。
                 reward_safe = [self.C_REWARD_SAFE_L, self.C_REWARD_SAFE_R,
                                self.C_REWARD_SAFE_B, self.C_REWARD_1]
                 reward_w = [3, 3, 3, 1]
+
+                def _click_blank(wait: float = 1.3):
+                    self.click(random.choices(reward_safe, weights=reward_w, k=1)[0])
+                    self.sleep(wait)
+
                 miss = 0
                 fix_try = 0
                 while 1:
@@ -476,7 +488,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                             logger.warning('物品详情弹窗关不掉，放弃本局结算')
                             return True
                         logger.info(f'物品详情弹窗出现，点空白关闭 ({fix_try}/6)')
-                        self.click(random.choices(reward_safe, weights=reward_w, k=1)[0], interval=1.2)
+                        _click_blank(1.2)
                         continue
                     if not self.appear(self.I_GREED_GHOST):
                         break
@@ -489,16 +501,23 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                         self.click(random.choice([
                             self.C_END_1_1, self.C_END_1_2, self.C_END_1_3,
                             self.C_END_1_4, self.C_END_1_5, self.C_END_1_6,
-                        ]), interval=1.2)
+                        ]))
+                        self.sleep(1.5)
                         continue
                     miss += 1
-                    if miss > 6:
-                        logger.warning('Greedy ghost 一直不消失(点空白也推不动)，放弃本局结算，'
-                                       '避免触发点击看门狗强制重启游戏')
+                    if miss > 20:
+                        # 贪吃鬼吃到金币时会播一段动画（截图里「+1051 金币」），
+                        # 动画期间输入被锁、点空白完全没用。20 次 × 1.3s ≈ 26 秒，
+                        # 足够任何一段结算动画播完；到这里才算真卡住。
+                        # 最后一搏：点左上角贪吃鬼图标本身（TrueOrochi 验证过的推进点），
+                        # 再退出，至少别让界面留在原地被 stuck 检测打成 GameStuckError。
+                        logger.warning('Greedy ghost 一直不消失(点空白也推不动)，'
+                                       '点贪吃鬼图标做最后一搏')
+                        for _ in range(3):
+                            self.appear_then_click(self.I_GREED_GHOST, interval=1)
+                            self.sleep(0.8)
                         return True
-                    action_click = random.choices(reward_safe, weights=reward_w, k=1)[0]
-                    if self.click(action_click, interval=1.5):
-                        continue
+                    _click_blank(1.3)
                 return True
             if self.appear(self.I_REWARD):
                 # 魂
