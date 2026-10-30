@@ -131,5 +131,12 @@ class GeneralInviteAssets:
 	O_FRIEND_NAME_2 = RuleOcr(roi=(729,184,196,346), area=(729,184,196,346), mode="Full", method="Default", keyword="", name="friend_name_2")
 	# Ocr-description 
 	O_ONLINE = RuleOcr(roi=(790,102,124,42), area=(0,0,100,100), mode="Single", method="Default", keyword="", name="online")
+	# 挑战失败后的「是否邀请队友继续进行战斗？」弹窗标题区域（2026-10 实测识别为
+	# ['是否邀请队友继续进行战斗？']，返回框 (474,292,334,25)）。
+	# ⚠️ 只借它的 roi 做 OCR 取文本，**keyword 故意留空**：BaseCor.filter() 在整串
+	# 不匹配时会退化成「逐字命中」（为兼容竖排文本），"确认退出组队面板吗？" 只因含
+	# 一个"队"字就被判命中（实测 10-23 / 10-26 两张截图全部误判）。
+	# 判定逻辑在 Orochi/script_task.py 的 _is_continue_battle_dialog() 里做严格子串匹配。
+	O_FAIL_INVITE = RuleOcr(roi=(360,280,560,62), area=(360,280,560,62), mode="Full", method="Default", keyword="", name="fail_invite")
 
 

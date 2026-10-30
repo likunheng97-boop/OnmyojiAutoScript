@@ -426,6 +426,31 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                 return True
         return False
 
+    def _is_continue_battle_dialog(self) -> bool:
+        """当前的双按钮卷轴弹窗是不是「是否邀请队友继续进行战斗？」
+
+        ⚠️ 不能用 `self.ocr_appear(self.O_FAIL_INVITE)`：BaseCor.filter() 在整串不匹配时
+        会退化成「逐字命中」（为了兼容竖排文本），"确认退出组队面板吗？" 只因为含一个
+        "队"字就被判定命中（实测 10-23 / 10-26 两张报错截图全部误判成 True）。
+        这里直接拿 OCR 原始文本做严格子串判断。
+        """
+        try:
+            results = self.O_FAIL_INVITE.detect_and_ocr(self.device.image)
+        except Exception as e:
+            logger.warning(f'OCR 失败，跳过继续战斗判定: {e}')
+            return False
+        text = ''.join(r.ocr_text for r in results)
+        if '邀请队友' in text:
+            logger.info(f'Challenge failed dialog: {text}')
+            return True
+        # 队员视角的文案没有样本，只认「加入」+「继续」同时出现，
+        # 避免把「…是否继续？」这种数量上限提示当成继续战斗
+        if '加入' in text and '继续' in text:
+            logger.info(f'Challenge failed dialog (member side): {text}')
+            return True
+        logger.warning(f'双按钮弹窗但不是邀请继续战斗: {text}')
+        return False
+
     def battle_wait(self, random_click_swipt_enable: bool) -> bool:
         """
         重写战斗等待
@@ -441,8 +466,46 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         self.C_REWARD_3.name = 'C_REWARD'
         # 战斗过程 随机点击和滑动 防封
         logger.info("Start battle process")
+        # 挑战失败后游戏会弹「是否邀请队友继续进行战斗？」（卷轴 + 取消/确定）。
+        # 原来这里只认 I_FALSE（结算界面的「失败」字样），但 2026-10 UI 改版后该模板
+        # 已经失配（实测在失败弹窗截图上只有 0.0541，阈值 0.8），于是这场战斗**没有任何
+        # 分支能命中** → while 1 里一直 random_click_swipt 空转，直到 BATTLE_STATUS_S
+        # 卡死看门狗把游戏强杀重启（log/error/1793349460935：16:34:42 开战 + 3 分钟没有
+        # 'Win battle'，然后 Game stuck）。两台实例各失败 3 次后整个 Orochi 任务退出。
+        # 现在识别到弹窗就点「确定」：
+        #   队长 = 继续邀请刚才的队友，队员 = 继续加入这场战斗。
+        # 判据要求「取消」和「确定」同时命中 —— 只有这个双按钮卷轴弹窗才两者都在，
+        # 单按钮提示（如体力不足）不会满足，避免误点消耗。
+        fail_invite_try = 0
         while 1:
             self.screenshot()
+            if self.appear(self.I_GI_SURE) and self.appear(self.I_GI_CANCEL):
+                # 再加一层 OCR 确认：只处理标题含「邀请队友」的弹窗。
+                # 同样是「取消+确定」卷轴，还有别的文案（例如「式盘达到数量上限，
+                # 是否继续？」「确认退出组队面板吗？」），在战斗里点错会白白消耗资源。
+                fail_invite = self._is_continue_battle_dialog()
+                if not fail_invite:
+                    logger.warning('双按钮弹窗不是「邀请队友继续战斗」，不处理')
+                if fail_invite:
+                    fail_invite_try += 1
+                    if fail_invite_try > 6:
+                        # 点了 6 次（约 12 秒）弹窗还不消失，说明队友已经散了、继续邀请没有回应。
+                        # 点取消退出本轮，把界面还给房间流程，别在这里死循环到看门狗强杀。
+                        logger.warning('Continue-battle dialog keeps showing, click cancel and '
+                                       'give up this round')
+                        self.appear_then_click(self.I_GI_CANCEL, interval=0)
+                        sleep(1.5)
+                        return False
+                    logger.info(f'Battle failed, click confirm to continue with teammates '
+                                f'({fail_invite_try}/6)')
+                    # 用 interval=0 + 显式 sleep 控制节奏：interval 的语义是「距上次点击是否满 N 秒」，
+                    # 拿它当节流会让 12 秒的等待窗口被几次快速循环吃光（见 battle_wait 里贪吃鬼那段注释）
+                    self.appear_then_click(self.I_GI_SURE, interval=0)
+                    sleep(2)
+                    continue
+            # 弹窗消失（继续成功 / 本来就没失败）就把重试计数清零，
+            # 这样下一场再失败时是新的 6 次配额
+            fail_invite_try = 0
             action_click = random.choice([self.C_WIN_1, self.C_WIN_2, self.C_WIN_3])
             if self.appear_then_click(self.I_WIN, action=action_click ,interval=0.8):
                 # 赢的那个鼓
