@@ -11,18 +11,19 @@ class GlobalGameAssets:
 
 
 	# Image Rule Assets
-	# 接受 
-	I_G_ACCEPT = RuleImage(roi_front=(830,407,56,46), roi_back=(798,369,117,110), threshold=0.8, method="Template matching", file="./tasks/GlobalGame/gg/gg_g_accept.png")
-	# 拒绝 
-	I_G_REJECT = RuleImage(roi_front=(832,508,53,51), roi_back=(808,480,108,101), threshold=0.8, method="Template matching", file="./tasks/GlobalGame/gg/gg_g_reject.png")
-	# 勾玉 
-	I_G_JADE = RuleImage(roi_front=(661,466,43,46), roi_back=(661,466,43,46), threshold=0.8, method="Template matching", file="./tasks/GlobalGame/gg/gg_g_jade.png")
-	# 猫粮 
-	I_G_CAT_FOOD = RuleImage(roi_front=(565,463,59,65), roi_back=(565,463,59,65), threshold=0.8, method="Template matching", file="./tasks/GlobalGame/gg/gg_g_cat_food.png")
-	# 狗粮 
-	I_G_DOG_FOOD = RuleImage(roi_front=(565,464,60,63), roi_back=(565,464,60,63), threshold=0.8, method="Template matching", file="./tasks/GlobalGame/gg/gg_g_dog_food.png")
-	# 忽略 
-	I_G_IGNORE = RuleImage(roi_front=(773,116,21,21), roi_back=(759,102,48,48), threshold=0.8, method="Template matching", file="./tasks/GlobalGame/gg/gg_g_ignore.png")
+	# 接受 (2026-10 改版：圆形图标 + 右侧「接受」文字长条，整体右移下移)
+	I_G_ACCEPT = RuleImage(roi_front=(845,456,70,70), roi_back=(815,426,130,130), threshold=0.8, method="Template matching", file="./tasks/GlobalGame/gg/gg_g_accept.png")
+	# 拒绝 (2026-10 改版)
+	I_G_REJECT = RuleImage(roi_front=(837,547,72,72), roi_back=(807,517,132,132), threshold=0.8, method="Template matching", file="./tasks/GlobalGame/gg/gg_g_reject.png")
+	# 勾玉 (2026-10 改版：奖励物品挪到卡片下方两个 72x76 槽位，搜索区扩到整个物品栏)
+	# 注意：本轮没截到勾协样本，模板图片仍是旧美术，只校准了搜索范围；等出现勾协邀请时再校准图
+	I_G_JADE = RuleImage(roi_front=(586,514,43,46), roi_back=(566,497,180,90), threshold=0.8, method="Template matching", file="./tasks/GlobalGame/gg/gg_g_jade.png")
+	# 猫粮 (2026-10 改版：已按新 UI 重截，60x60)
+	I_G_CAT_FOOD = RuleImage(roi_front=(666,507,60,60), roi_back=(566,497,180,90), threshold=0.8, method="Template matching", file="./tasks/GlobalGame/gg/gg_g_cat_food.png")
+	# 狗粮 (2026-10 改版：同勾玉，仅校准搜索范围，模板未重截)
+	I_G_DOG_FOOD = RuleImage(roi_front=(576,510,60,63), roi_back=(566,497,180,90), threshold=0.8, method="Template matching", file="./tasks/GlobalGame/gg/gg_g_dog_food.png")
+	# 忽略 (2026-10 改版：标题右侧的粉色发光 ✕，44x44)
+	I_G_IGNORE = RuleImage(roi_front=(779,71,44,44), roi_back=(761,53,80,80), threshold=0.8, method="Template matching", file="./tasks/GlobalGame/gg/gg_g_ignore.png")
 	# 网络异常 
 	I_NETWORK_ABNORMAL = RuleImage(roi_front=(583,330,221,67), roi_back=(583,330,221,67), threshold=0.8, method="Template matching", file="./tasks/GlobalGame/gg/gg_network_abnormal.png")
 	# 已端口游戏服务器，需要重新连接，这种情况一般是断开很久了 
