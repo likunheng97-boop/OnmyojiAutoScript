@@ -17,6 +17,22 @@ from tasks.Orochi.config import Orochi, UserStatus, Layer
 from tasks.TrueOrochi.assets import TrueOrochiAssets
 from module.logger import logger
 from module.exception import TaskEnd
+from module.atom.click import RuleClick
+from module.atom.ocr import RuleOcr
+
+# 战前「额外加成：好友+10% 组队+20% 亲友+10% / 点击屏幕继续」展示界面。
+# 2026-10-30 18:46:58（log/error/1793357218730）第 51 局就卡在这个界面上，
+# battle_wait 里没有任何分支认它，只能等 random_click_swipt 那 0.8% 的概率。
+# 文字实测位于 1280×720 的 x≈475~805 / y≈555~585，ROI 取 (360,535,560,80)
+# 后，在 log/error 全部 38 张历史截图上只命中本次卡死那一张，其余 0 误判。
+O_CLICK_TO_CONTINUE = RuleOcr(roi=(360, 535, 560, 80), area=(360, 535, 560, 80),
+                              mode="Full", method="Default", keyword="",
+                              name="click_to_continue")
+# 推进这个界面的落点：底部中央纯空白（沿用 reward_safe_b 实测 edge≈0.26% 的坐标），
+# 避开中间那排式神头像（点头像会弹式神详情，反而更卡）
+C_CLICK_TO_CONTINUE = RuleClick(roi_front=(720, 645, 200, 70),
+                                roi_back=(720, 645, 200, 70),
+                                name="click_to_continue")
 
 
 class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi, SwitchSoul, OrochiAssets, TrueOrochiAssets):
@@ -236,6 +252,17 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
 
         # 进入战斗流程
         self.device.stuck_record_add('BATTLE_STATUS_S')
+        # 队员在庭院等队长邀请时一个点击都没有，stuck record 不会被任何点击刷新，
+        # 300 秒一到就被判 GameStuckError 直接强杀游戏。
+        # 见 log/error/1793372346525 / 1793372817517 / 1793373132811（2026-10-30
+        # 22:54~23:12：队长 oas2 在 22:43 已经三次失败退出，队员 oas1 在庭院干等
+        # 5 分钟连挂三次，最后整个 Orochi 任务被判失败要求人工接管）。
+        # 在庭院等邀请是正常等待而不是卡死，所以等待期间清掉 stuck record；
+        # 真正开战后 run_general_battle 会重新 add。
+        # 另外自己给等待设个上限，超时就正常退出本任务让调度器稍后重试。
+        idle_timeout = timedelta(minutes=5)
+        idle_start = datetime.now()
+        success = True
         while 1:
             self.screenshot()
 
@@ -254,6 +281,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                 continue
 
             if self.is_in_room():
+                idle_start = datetime.now()
                 self.device.stuck_record_clear()
                 if self.wait_battle(wait_time=self.config.orochi.invite_config.wait_time):
                     self.run_general_battle(config=self.config.orochi.general_battle_config)
@@ -261,7 +289,15 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                     break
             # 队长秒开的时候，检测是否进入到战斗中
             elif self.check_take_over_battle(False, config=self.config.orochi.general_battle_config):
+                idle_start = datetime.now()
                 continue
+            else:
+                # 还在庭院里等邀请
+                self.device.stuck_record_clear()
+                if datetime.now() - idle_start >= idle_timeout:
+                    logger.warning('Member: still not invited after 5 minutes, exit this orochi task')
+                    success = False
+                    break
 
         while 1:
             # 有一种情况是本来要退出的，但是队长邀请了进入的战斗的加载界面
@@ -277,7 +313,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
 
         self.ui_get_current_page()
         self.ui_goto(page_main)
-        return True
+        return success
 
     def run_alone(self):
         logger.info('Start run alone')
@@ -451,6 +487,20 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         logger.warning(f'双按钮弹窗但不是邀请继续战斗: {text}')
         return False
 
+    def _is_click_to_continue(self) -> bool:
+        """当前界面是否有「点击屏幕继续」提示。
+
+        这类界面（战前加成展示、结算提示）点一下就能推进，但 battle_wait 里没有任何
+        模板能认它。不加 OCR 判断就无脑点的话，真战斗中会点到式神弹出技能详情。
+        """
+        try:
+            results = O_CLICK_TO_CONTINUE.detect_and_ocr(self.device.image)
+        except Exception as e:
+            logger.warning(f'OCR 失败，跳过「点击屏幕继续」判定: {e}')
+            return False
+        text = ''.join(r.ocr_text for r in results).replace(' ', '')
+        return '点击屏幕继续' in text
+
     def battle_wait(self, random_click_swipt_enable: bool) -> bool:
         """
         重写战斗等待
@@ -477,9 +527,15 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         # 判据要求「取消」和「确定」同时命中 —— 只有这个双按钮卷轴弹窗才两者都在，
         # 单按钮提示（如体力不足）不会满足，避免误点消耗。
         fail_invite_try = 0
+        # 连续「什么都没命中」的轮数。用于发现卡在未知界面（典型是「点击屏幕继续」）
+        # 的情况：原来这里只靠 random_click_swipt，但它触发概率 4/501≈0.8%、
+        # 还带 interval=20 的节流，60 秒里往往只点一次 —— 2026-10-30 18:46:58 就是
+        # 只点了 1 次（18:45:58）没推进，然后被看门狗强杀。
+        idle_round = 0
         while 1:
             self.screenshot()
             if self.appear(self.I_GI_SURE) and self.appear(self.I_GI_CANCEL):
+                idle_round = 0
                 # 再加一层 OCR 确认：只处理标题含「邀请队友」的弹窗。
                 # 同样是「取消+确定」卷轴，还有别的文案（例如「式盘达到数量上限，
                 # 是否继续？」「确认退出组队面板吗？」），在战斗里点错会白白消耗资源。
@@ -509,8 +565,10 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             action_click = random.choice([self.C_WIN_1, self.C_WIN_2, self.C_WIN_3])
             if self.appear_then_click(self.I_WIN, action=action_click ,interval=0.8):
                 # 赢的那个鼓
+                idle_round = 0
                 continue
             if self.appear(self.I_GREED_GHOST):
+                idle_round = 0
                 # 贪吃鬼
                 logger.info('Win battle')
                 self.wait_until_appear(self.I_REWARD, wait_time=1.5)
@@ -595,6 +653,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                 return True
             if self.appear(self.I_REWARD):
                 # 魂
+                idle_round = 0
                 logger.info('Win battle')
                 appear_greed_ghost = self.appear(self.I_GREED_GHOST)
                 while 1:
@@ -607,10 +666,27 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                 return True
 
             if self.appear(self.I_FALSE):
+                idle_round = 0
                 logger.warning('False battle')
                 self.ui_click_until_disappear(self.I_FALSE)
                 return False
 
+            # ---------------- 未知界面兜底 ----------------
+            # 连续 12 轮（每轮约 0.15~0.5s，合计 4~8 秒）一个分支都没命中，说明界面
+            # 停在我们不认识的画面上。先 OCR 确认是不是「点击屏幕继续」，是就主动点一下。
+            # 顺手把 stuck 记录补回来：self.click() 内部会走 handle_control_check →
+            # stuck_record_clear()，把 BATTLE_STATUS_S 抹掉、并重置 60 秒计时器，
+            # 于是下一次点击后 60 秒（而不是 long_wait_list 给的 300 秒）就会
+            # GameStuckError 强杀游戏 —— 这正是 18:46:58 只等了 60 秒的原因。
+            idle_round += 1
+            if idle_round >= 12:
+                idle_round = 0
+                if self._is_click_to_continue():
+                    logger.info('卡在「点击屏幕继续」提示(通常是战前加成展示)，主动点击推进')
+                    self.click(C_CLICK_TO_CONTINUE)
+                    sleep(1.2)
+                    self.device.stuck_record_add('BATTLE_STATUS_S')
+                    continue
             # 如果开启战斗过程随机滑动
             if random_click_swipt_enable:
                 self.random_click_swipt()

@@ -118,8 +118,12 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
 
             # 点击挑战
             if fire:
-                self.click_fire()
-                return True
+                if self.click_fire():
+                    return True
+                # 点了挑战但界面没动（房间其实没有可用队友），
+                # 不要再硬点，交给上层重新邀请 / 退出任务
+                logger.warning('Click fire failed, the room is not ready to start')
+                return False
 
             if self.timer_invite and self.timer_invite.reached():
                 if is_first:
@@ -196,15 +200,45 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
                 continue
         return True
 
-    def click_fire(self):
+    def click_fire(self, max_click: int = 5) -> bool:
+        """
+        点击挑战按钮，返回是否真的把战斗开起来了。
+        :param max_click: 最多点几次，点不动就放弃
+
+        原实现是无上限的 `while 1`：只要 is_in_room() 还成立就一直点。当房间里其实
+        没有可用队友（队友离队 / 掉线 / 房间队友位显示有但服务端认为没有）时，游戏
+        只会弹一条「需要有队友才能开始战斗」的提示、界面完全不动，于是同一个按钮被
+        连点 10 次，device 的点击看门狗抛 GameTooManyClickError，整个任务直接暴毙。
+        见 log/error/1793371317786（2026-10-30 22:41:57，oas2 队长房间）。
+        现在：最多点 max_click 次；点不动就把 False 返回给 run_invite，
+        由上层走「邀请失败」的正常分支，而不是被看门狗打死。
+        """
+        clicked = 0
+        timer = Timer(20).start()
         while 1:
             self.screenshot()
             if not self.is_in_room(False):
-                break
-            if self.appear_then_click(self.I_FIRE, interval=1, threshold=0.7):
+                # 房间界面没了 == 战斗已经开起来，或者已经离开房间
+                return True
+            if clicked >= max_click:
+                logger.warning(f'Fire button still there after {clicked} clicks, '
+                               f'room is not ready to start (teammate missing?)')
+                return False
+            if timer.reached():
+                logger.warning('Fire click timeout, still in room')
+                return False
+            if self.appear(self.I_FIRE, threshold=0.7):
+                self.click(self.I_FIRE)
+                clicked += 1
+                sleep(1.2)
                 continue
-            if self.appear_then_click(self.I_FIRE_SEA, interval=1, threshold=0.7):
+            if self.appear(self.I_FIRE_SEA, threshold=0.7):
+                self.click(self.I_FIRE_SEA)
+                clicked += 1
+                sleep(1.2)
                 continue
+            sleep(0.3)
+
     @cached_property
     def room_type(self) -> RoomType:
         """

@@ -28,6 +28,21 @@ from tasks.SixRealms.assets import SixRealmsAssets
 from tasks.base_task import BaseTask
 from tasks.ActivityShikigami.assets import ActivityShikigamiAssets
 
+# 未知页面上可能压着一个模态确认弹窗。这时左上角返回键的模板仍然能匹配上
+# （弹窗是半透明的、返回键在弹窗框外面），但点击全被弹窗吃掉，于是
+# try_close_unknown_page 在同一个返回键上连点，直到 device 看门狗抛
+# GameTooManyClickError，任务直接被打挂。
+# 见 log/error/1793371346094 / 1793371374579（2026-10-30 22:42，oas2 游戏重启后
+# 停在「确认退出组队面板吗？」上，返回键点了 6 次无效）。
+# 文字实测位于 1280×720 的 x≈518~735 / y≈306~332，ROI (300,250,700,140) OCR 命中 0.95；
+# 金色「确定」按钮实测 box=(664,407,180,72)，红色「取消」在 (436,407,180,65)。
+O_CONFIRM_EXIT = RuleOcr(roi=(300, 250, 700, 140), area=(300, 250, 700, 140),
+                         mode="Full", method="Default", keyword="",
+                         name="confirm_exit")
+C_CONFIRM_EXIT_OK = RuleClick(roi_front=(664, 407, 180, 72),
+                              roi_back=(664, 407, 180, 72),
+                              name="confirm_exit_ok")
+
 
 class GameUi(BaseTask, GameUiAssets):
     ui_current: Page = None
@@ -277,12 +292,35 @@ class GameUi(BaseTask, GameUiAssets):
             logger.error(f'Cannot goto page[{destination}], timeout[{timeout}s] reached')
         return False
 
+    def _close_blocking_confirm_dialog(self) -> bool:
+        """未知页面上如果压着「确认退出……」这类双按钮弹窗，先点掉它。
+
+        ⚠️ 不能用 self.ocr_appear()：BaseCor.filter() 在整串不匹配时会退化成
+        「逐字命中」（为了兼容竖排文本），"确认退出组队面板吗？" 只因含一个
+        "队"字就会被别的规则误判成命中。这里直接拿 OCR 原始文本做严格子串判断。
+        """
+        try:
+            results = O_CONFIRM_EXIT.detect_and_ocr(self.device.image)
+        except Exception as e:
+            logger.warning(f'OCR 失败，跳过确认弹窗判定: {e}')
+            return False
+        text = ''.join(r.ocr_text for r in results).replace(' ', '')
+        if '确认退出' not in text:
+            return False
+        logger.warning(f'Blocking confirm dialog on unknown page: {text}, click OK')
+        self.click(C_CONFIRM_EXIT_OK)
+        sleep(0.8)
+        return True
+
     def try_close_unknown_page(self, skip_screenshot: bool = True):
         """
         尝试关闭未知界面
         :return: 执行了关闭返回True, 否则False
         """
         self.maybe_screenshot(skip_screenshot)
+        # 先处理挡在页面上的模态确认弹窗，不然下面的返回键全是无效点击
+        if self._close_blocking_confirm_dialog():
+            return True
         timer = Timer(None).start()
         for close in self.ui_close:
             if self.appear_then_click(close, interval=1.5):
