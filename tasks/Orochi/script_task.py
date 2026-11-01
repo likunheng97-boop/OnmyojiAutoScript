@@ -20,19 +20,54 @@ from module.exception import TaskEnd
 from module.atom.click import RuleClick
 from module.atom.ocr import RuleOcr
 
-# 战前「额外加成：好友+10% 组队+20% 亲友+10% / 点击屏幕继续」展示界面。
-# 2026-10-30 18:46:58（log/error/1793357218730）第 51 局就卡在这个界面上，
-# battle_wait 里没有任何分支认它，只能等 random_click_swipt 那 0.8% 的概率。
-# 文字实测位于 1280×720 的 x≈475~805 / y≈555~585，ROI 取 (360,535,560,80)
-# 后，在 log/error 全部 38 张历史截图上只命中本次卡死那一张，其余 0 误判。
-O_CLICK_TO_CONTINUE = RuleOcr(roi=(360, 535, 560, 80), area=(360, 535, 560, 80),
-                              mode="Full", method="Default", keyword="",
-                              name="click_to_continue")
+# 需要「点一下屏幕才能继续」的两类界面，battle_wait 里没有任何模板能认它们：
+#   1) 战前加成展示「额外加成：好友+10% 组队+20% 亲友+10% / 点击屏幕继续」
+#      2026-10-30 18:46:58（log/error/1793357218730）第 51 局卡死在这。
+#      这两个字实测在 x≈475~805 / y≈555~585。
+#   2) 挑战失败的结算画面「提升式神/御魂 · 提升阴阳师/御灵 · 再次挑战 / 点击屏幕继续」
+#      2026-10-31 21:57:06（log/error/1793455027143）：原来 ROI 只盖住第 1 类的
+#      y≈555~585，这里「点击屏幕继续」在 y≈679~709 完全读不到（读到的其实是
+#      y≈590 的阴阳师名字「无形同载」），于是 300 秒没人点 → GameStuckError 强杀。
+#      **这个画面不点掉，后面那句「是否邀请队友继续进行战斗？」的确认框根本不会出现**，
+#      所以用户看到的现象是「失败后从不点继续邀请队友的确认」。
+# 现在统一成一个大 ROI (300,370,700,350)，一网打尽：第 2 类的「再次挑战」
+# (y≈396~424)、第 1 类的「点击屏幕继续」(y≈555~585)、第 2 类的「点击屏幕继续」
+# (y≈679~709)。两个关键词互为冗余 —— 实测其中一张截图把「点击屏幕继续」读成
+# 「击屏幕继续」，靠「再次挑战」照样能命中。
+# 误判验证：邀请弹窗、真战斗、贪吃鬼结算画面上两个关键词都不出现。
+O_SETTLE_ADVANCE = RuleOcr(roi=(300, 370, 700, 350), area=(300, 370, 700, 350),
+                            mode="Full", method="Default", keyword="",
+                            name="settle_advance")
 # 推进这个界面的落点：底部中央纯空白（沿用 reward_safe_b 实测 edge≈0.26% 的坐标），
 # 避开中间那排式神头像（点头像会弹式神详情，反而更卡）
 C_CLICK_TO_CONTINUE = RuleClick(roi_front=(720, 645, 200, 70),
                                 roi_back=(720, 645, 200, 70),
                                 name="click_to_continue")
+
+# 庭院主界面底部那排功能按钮的文字（图鉴 / 珍旅居 / 纳物库 / 组队 / 阴阳寮 / 商店 /
+# 花合战 / 好友 / 阴阳术 / 式神录）。这排按钮**不随昼夜、主题换肤变化**，比
+# page_main 的 I_CHECK_MAIN 可靠得多：I_CHECK_MAIN 裁的是庭院天空的云纹，
+# 2026-11-01 20:49 的夜间樱花庭院上只有 0.5268（阈值 0.8），根本认不出庭院。
+#
+# 用途：battle_wait 里如果发现画面已经回到庭院，说明这一局对本人早就结束了
+# （典型是队长挑战失败后队伍被解散，游戏把队员直接抛回庭院），必须退出
+# battle_wait 把控制权还给 run_member 主循环 —— 否则主循环里的
+# check_then_accept() 永远得不到执行，队长重新邀请时队员就「永远不点接受」。
+# 见 log/error/1793537377489（2026-11-01 20:47:21 第 108 局开战后，20:48:49
+# 画面已经是庭院，一直空转到 20:49:37 被 GameStuckError 强杀）。
+#
+# ROI 必须**只盖住底部按钮栏**（y 545~720）。实测用大 ROI (300,370,700,350) 时，
+# 战前加成界面的「额外加成：好友+10% 组队+20% 亲友+10%」会把「组队」「好友」两个
+# 词送进来，于是战斗还没开始就被误判成「已经回到庭院」直接退局
+# （log/error/1793357218730 就是这么误判的）。这个 175 高的扁 ROI 在加成界面上
+# 只能读到「点击屏幕继续」和倒计时，一个按钮词都不出现。
+O_PAGE_MAIN = RuleOcr(roi=(300, 545, 700, 175), area=(300, 545, 700, 175),
+                      mode="Full", method="Default", keyword="",
+                      name="page_main_buttons")
+# 底部按钮文字。故意不收单字「组」：它在别处（组队面板、组成）太常见，
+# 收益不值这个风险。OCR 把「花合战」读成「抢合战」的情况实测存在，收作别名。
+O_PAGE_MAIN_KEYWORDS = ('图鉴', '珍旅居', '纳物库', '组队', '阴阳寮', '商店',
+                        '花合战', '抢合战', '好友', '阴阳术', '式神录')
 
 
 class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi, SwitchSoul, OrochiAssets, TrueOrochiAssets):
@@ -487,19 +522,42 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         logger.warning(f'双按钮弹窗但不是邀请继续战斗: {text}')
         return False
 
-    def _is_click_to_continue(self) -> bool:
-        """当前界面是否有「点击屏幕继续」提示。
+    def _settle_advance_keyword(self) -> str:
+        """当前界面是否是「点一下屏幕才能推进」的界面，是则返回命中的关键词。
 
-        这类界面（战前加成展示、结算提示）点一下就能推进，但 battle_wait 里没有任何
-        模板能认它。不加 OCR 判断就无脑点的话，真战斗中会点到式神弹出技能详情。
+        覆盖两类：战前加成展示、挑战失败的结算画面。这类界面点一下就能推进，
+        但 battle_wait 里没有任何模板能认它。不加 OCR 判断就无脑点的话，
+        真战斗中会点到式神弹出技能详情。
         """
         try:
-            results = O_CLICK_TO_CONTINUE.detect_and_ocr(self.device.image)
+            results = O_SETTLE_ADVANCE.detect_and_ocr(self.device.image)
         except Exception as e:
-            logger.warning(f'OCR 失败，跳过「点击屏幕继续」判定: {e}')
+            logger.warning(f'OCR 失败，跳过结算界面判定: {e}')
+            return ''
+        text = ''.join(r.ocr_text for r in results).replace(' ', '')
+        for kw in ('点击屏幕继续', '再次挑战'):
+            if kw in text:
+                return kw
+        return ''
+
+    def _is_page_main(self) -> bool:
+        """当前画面是不是庭院主界面（靠底部那排功能按钮的文字认）。
+
+        战斗界面底部是技能栏、房间界面底部是「开始战斗」，都不会出现
+        「纳物库 / 阴阳寮 / 花合战」这类按钮词；要求**至少命中 2 个**不同的按钮，
+        单个词命中不足以下结论。
+        """
+        try:
+            results = O_PAGE_MAIN.detect_and_ocr(self.device.image)
+        except Exception as e:
+            logger.warning(f'OCR 失败，跳过庭院判定: {e}')
             return False
         text = ''.join(r.ocr_text for r in results).replace(' ', '')
-        return '点击屏幕继续' in text
+        hits = [kw for kw in O_PAGE_MAIN_KEYWORDS if kw in text]
+        if len(hits) >= 2:
+            logger.info(f'[PAGE_MAIN] 庭院底部按钮命中 {hits}')
+            return True
+        return False
 
     def battle_wait(self, random_click_swipt_enable: bool) -> bool:
         """
@@ -532,6 +590,9 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         # 还带 interval=20 的节流，60 秒里往往只点一次 —— 2026-10-30 18:46:58 就是
         # 只点了 1 次（18:45:58）没推进，然后被看门狗强杀。
         idle_round = 0
+        # 「点一下屏幕才能推进」的界面（战前加成 / 失败结算）已经被点了多少次。
+        # 加个上限是为了别在真点不掉的画面上一直点到看门狗强杀游戏。
+        advance_try = 0
         while 1:
             self.screenshot()
             if self.appear(self.I_GI_SURE) and self.appear(self.I_GI_CANCEL):
@@ -672,21 +733,49 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                 return False
 
             # ---------------- 未知界面兜底 ----------------
-            # 连续 12 轮（每轮约 0.15~0.5s，合计 4~8 秒）一个分支都没命中，说明界面
-            # 停在我们不认识的画面上。先 OCR 确认是不是「点击屏幕继续」，是就主动点一下。
+            # 连续几轮一个分支都没命中，说明界面停在我们不认识的画面上。先 OCR 确认
+            # 是不是「点击屏幕继续 / 再次挑战」这种点一下就推进的界面，是就主动点。
             # 顺手把 stuck 记录补回来：self.click() 内部会走 handle_control_check →
             # stuck_record_clear()，把 BATTLE_STATUS_S 抹掉、并重置 60 秒计时器，
             # 于是下一次点击后 60 秒（而不是 long_wait_list 给的 300 秒）就会
             # GameStuckError 强杀游戏 —— 这正是 18:46:58 只等了 60 秒的原因。
             idle_round += 1
-            if idle_round >= 12:
+            # 6 轮（约 2.5 秒）就查一次，比原来的 12 轮更及时：失败结算画面停留太久时，
+            # 游戏可能自己跳走或者队友先退了，越早点掉越不容易错过「继续邀请」窗口
+            if idle_round >= 6:
                 idle_round = 0
-                if self._is_click_to_continue():
-                    logger.info('卡在「点击屏幕继续」提示(通常是战前加成展示)，主动点击推进')
+                keyword = self._settle_advance_keyword()
+                if keyword:
+                    advance_try += 1
+                    if advance_try > 10:
+                        # 点了 10 次（约 25 秒）还没推进，说明这画面点不掉了，
+                        # 主动交出控制权，让调度器重开任务，别等看门狗强杀游戏
+                        logger.warning(f'卡在「{keyword}」界面点不掉，放弃本局')
+                        return False
+                    logger.info(f'卡在「{keyword}」界面，主动点击推进 ({advance_try}/10)')
                     self.click(C_CLICK_TO_CONTINUE)
-                    sleep(1.2)
+                    sleep(1.5)
+                    # self.click() 内部会 stuck_record_clear()，把 300 秒的长等待
+                    # 降级成 60 秒，这里补回来
                     self.device.stuck_record_add('BATTLE_STATUS_S')
                     continue
+                # 画面已经在庭院主界面了，说明这一局对本人早就结束（典型：队长
+                # 挑战失败后队伍被解散，游戏直接把队员抛回庭院）。这里必须退出，
+                # 把控制权还给 run_member 主循环 —— 主循环里才有 check_then_accept()，
+                # 卡在这里的后果就是「队长重新邀请，队员永远不点接受」，
+                # 然后 300 秒被 GameStuckError 强杀（log/error/1793537377489）。
+                if self._is_page_main():
+                    logger.warning('Battle is over, game already back to main page '
+                                   '(team dissolved by leader?), give up this round '
+                                   'and let the member loop handle invitations')
+                    return False
+                # 战斗失败点掉结算画面后，有时不回弹窗而是直接退回房间，
+                # 这时 battle_wait 再不退出就会原地空转到看门狗（三张失败/弹窗截图上
+                # 这三个房间模板的匹配分都是 0.02~0.11，不会误判成房间）
+                if self.is_in_room(False):
+                    logger.warning('Battle ended, back to room without retry dialog, '
+                                   'give up this round')
+                    return False
             # 如果开启战斗过程随机滑动
             if random_click_swipt_enable:
                 self.random_click_swipt()

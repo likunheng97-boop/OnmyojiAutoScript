@@ -293,7 +293,11 @@ class GameUi(BaseTask, GameUiAssets):
         return False
 
     def _close_blocking_confirm_dialog(self) -> bool:
-        """未知页面上如果压着「确认退出……」这类双按钮弹窗，先点掉它。
+        """未知页面上如果压着「取消 + 确定」的双按钮卷轴弹窗，先点掉它。
+
+        目前处理两种：
+          * 「确认退出组队面板吗？」—— 确定退组
+          * 「是否邀请队友继续进行战斗？」/「是否继续加入战斗？」—— 确定继续打
 
         ⚠️ 不能用 self.ocr_appear()：BaseCor.filter() 在整串不匹配时会退化成
         「逐字命中」（为了兼容竖排文本），"确认退出组队面板吗？" 只因含一个
@@ -305,6 +309,20 @@ class GameUi(BaseTask, GameUiAssets):
             logger.warning(f'OCR 失败，跳过确认弹窗判定: {e}')
             return False
         text = ''.join(r.ocr_text for r in results).replace(' ', '')
+        # 「是否邀请队友继续进行战斗？」「是否继续加入战斗？」—— 同样是「取消 + 确定」
+        # 的卷轴弹窗，确定在**右边金色**那个，坐标与「确认退出组队面板吗？」的确定完全
+        # 重合（实测 roi_front(664,407,180,72) 正中落在金色确定上），所以共用落点。
+        #
+        # 这个弹窗原先没有任何人处理：2026-10-31 21:58（log/error/1793455120510）任务
+        # 被 GameStuckError 强杀后重启，游戏恢复在这个弹窗上，ui_get_current_page()
+        # 认不出页面 → 进 try_close_unknown_page() → 这里把标题读出来了却只比对
+        # 「确认退出」，于是每 0.8 秒空读一次、18 轮后放弃 → Unknown ui page →
+        # Game page unknown，整个任务直接失败。所以必须在这里点掉它。
+        if ('邀请队友' in text and '继续' in text) or ('加入' in text and '继续' in text):
+            logger.warning(f'Invite-continue dialog on unknown page: {text}, click OK')
+            self.click(C_CONFIRM_EXIT_OK)
+            sleep(0.8)
+            return True
         if '确认退出' not in text:
             return False
         logger.warning(f'Blocking confirm dialog on unknown page: {text}, click OK')
