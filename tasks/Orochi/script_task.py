@@ -69,6 +69,14 @@ O_PAGE_MAIN = RuleOcr(roi=(300, 545, 700, 175), area=(300, 545, 700, 175),
 O_PAGE_MAIN_KEYWORDS = ('图鉴', '珍旅居', '纳物库', '组队', '阴阳寮', '商店',
                         '花合战', '抢合战', '好友', '阴阳术', '式神录')
 
+# 庭院「探索」标签（GameUiAssets.I_MAIN_GOTO_EXPLORATION，45×75 金底竖排黑字）
+# 的判定阈值。模板自带 0.8 太严：夜间樱花庭院实测只有 0.6874（模板裁的是白天寺庙
+# 场景的配色），会被漏判。而 log/error 下 55 张历史截图里，非庭院画面的最高分只有
+# 0.4426（战斗中的「加成」标签，形似金底竖排），所以 0.60 是「覆盖真实庭院」与
+# 「零误判」之间的中点。阈值取低的代价只是漏判，而漏判有底部按钮栏 OCR 兜底，
+# 方向是安全的；反过来取高才会真的把队员卡死在 battle_wait 里。
+PAGE_MAIN_EXPLORATION_THRESHOLD = 0.60
+
 
 class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi, SwitchSoul, OrochiAssets, TrueOrochiAssets):
 
@@ -540,13 +548,32 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                 return kw
         return ''
 
+    def _is_page_main_by_exploration(self) -> bool:
+        """用庭院那个竖排「探索」标签做模板匹配，约 8ms，不跑 OCR。
+
+        这个标签是庭院主界面自带的固定功能入口（金底黑字，45×75），战斗、结算、
+        房间、加成展示画面上都没有，所以拿它当庭院指纹比 OCR 又快又准。
+
+        ⚠️ 但不能当唯一依据：庭院上弹的「关联手机」等模态弹窗会把它盖住，
+        log/error/1793300795263 实测被压到 0.4555，直接漏判。所以只做快路径，
+        漏判交给 _is_page_main() 的底部按钮栏 OCR 兜底。
+        """
+        return self.appear(self.I_MAIN_GOTO_EXPLORATION,
+                           threshold=PAGE_MAIN_EXPLORATION_THRESHOLD)
+
     def _is_page_main(self) -> bool:
-        """当前画面是不是庭院主界面（靠底部那排功能按钮的文字认）。
+        """当前画面是不是庭院主界面。
+
+        先走 8ms 的「探索」标签模板匹配；不命中再退回底部按钮栏 OCR（约 0.18s）。
+        两级是有必要的：探索标签会被弹窗盖住，而底部按钮栏在弹窗下方基本不会被遮，
+        两者互补。
 
         战斗界面底部是技能栏、房间界面底部是「开始战斗」，都不会出现
         「纳物库 / 阴阳寮 / 花合战」这类按钮词；要求**至少命中 2 个**不同的按钮，
         单个词命中不足以下结论。
         """
+        if self._is_page_main_by_exploration():
+            return True
         try:
             results = O_PAGE_MAIN.detect_and_ocr(self.device.image)
         except Exception as e:
@@ -744,6 +771,14 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             # 游戏可能自己跳走或者队友先退了，越早点掉越不容易错过「继续邀请」窗口
             if idle_round >= 6:
                 idle_round = 0
+                # 先花 8ms 用「探索」标签确认是不是已经回庭院了（纯模板匹配，不跑 OCR）。
+                # 庭院是最常见的卡死现场，命中就直接交还控制权，省掉下面两次 OCR
+                # （_settle_advance_keyword + _is_page_main 合计 0.36s/轮）。
+                if self._is_page_main_by_exploration():
+                    logger.warning('Battle is over, game already back to main page '
+                                   '(team dissolved by leader?), give up this round '
+                                   'and let the member loop handle invitations')
+                    return False
                 keyword = self._settle_advance_keyword()
                 if keyword:
                     advance_try += 1
