@@ -169,7 +169,7 @@ class GeneralBattle(BattleWait, GeneralBuff):
         # 但是无需取消设置，因为如果有点击或者滑动的话 handle_control_check会自行取消掉
         self.device.stuck_record_add('BATTLE_STATUS_S')
         self.device.click_record_clear()
-        # 战斗过程 随机点击和滑动 防封
+        # 战斗过程 随机滑动 防封
         logger.info("Start battle process")
         win: bool = False
         while 1:
@@ -470,13 +470,11 @@ class GeneralBattle(BattleWait, GeneralBuff):
 
     def random_click_swipt(self):
         if 0 <= random.randint(0, 500) <= 3:  # 百分之4的概率
-            rand_type = random.randint(0, 2)
-            match rand_type:
+            # 只做随机滑动，不再随机点击（原 case 0 的 C_RANDOM_CLICK）
+            match random.randint(0, 1):
                 case 0:
-                    self.click(self.C_RANDOM_CLICK, interval=20)
-                case 1:
                     self.swipe(self.S_BATTLE_RANDOM_LEFT, interval=20)
-                case 2:
+                case 1:
                     self.swipe(self.S_BATTLE_RANDOM_RIGHT, interval=20)
             # 重新设置为长战斗
             # self.device.stuck_record_add('BATTLE_STATUS_S')

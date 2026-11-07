@@ -1437,12 +1437,11 @@ class BattleWait(BaseTask, GeneralBattleAssets):
 
     @randomclick_gate
     def _bw_randomclick_default(self, pub: PublicContext, pri: PrivateContext) -> HookSignal:
-        match random.randint(0, 2):
+        # 只做随机滑动，不再随机点击（原 case 0 的 C_RANDOM_CLICK）
+        match random.randint(0, 1):
             case 0:
-                self.click(self.C_RANDOM_CLICK, interval=20)
-            case 1:
                 self.swipe(self.S_BATTLE_RANDOM_LEFT, interval=20)
-            case 2:
+            case 1:
                 self.swipe(self.S_BATTLE_RANDOM_RIGHT, interval=20)
         return HookSignal.CONTINUE
 
