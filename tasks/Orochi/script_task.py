@@ -195,6 +195,36 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
 
 
 
+    def _leader_rebuild_room(self) -> bool:
+        """队长在房间丢失后重建房间，接着刷（不重置 current_count）。
+
+        从 run_leader 的初始化段抽出来的复用版本：回御魂界面 → 选层 → 锁队 →
+        建队 → 建房 → 设为私密 → 确认创建。调用方随后把 is_first 置 True 重新邀请。
+        :return: True 表示新房间已建好
+        """
+        self.ui_get_current_page()
+        self.ui_goto(page_soul_zones)
+        self.orochi_enter()
+        layer = self.config.orochi.orochi_config.layer
+        self.check_layer(layer)
+        self.config.orochi.general_battle_config.lock_team_enable = True
+        self.check_lock(self.config.orochi.general_battle_config.lock_team_enable)
+        logger.info('Rebuild team')
+        deadline = datetime.now() + timedelta(seconds=40)
+        while 1:
+            self.screenshot()
+            if self.appear(self.I_CHECK_TEAM):
+                break
+            if self.appear_then_click(self.I_FORM_TEAM, interval=1):
+                continue
+            if datetime.now() > deadline:
+                logger.warning('Rebuild team: 组队面板 40s 未出现，放弃本次重建')
+                return False
+        self.create_room()
+        self.ensure_private()
+        self.create_ensure()
+        return True
+
     def run_leader(self):
         logger.info('Start run leader')
         self.ui_get_current_page()
@@ -221,6 +251,16 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         # 邀请队友
         success = True
         is_first = True
+        # 队长一轮要连续刷满 limit_count 场（默认 120 场，实际要 1 小时以上）。
+        # 期间只要某一局结束后游戏回到庭院（队员掉线/挑战失败/房间被解散），
+        # 原逻辑只把「探索界面、组队界面」认定为房间失效，在庭院会一直 empty
+        # continue 空转，直到 stuck record 300 秒超时被 GameStuckError 强杀游戏。
+        # 实测 2026-11-07 全天 oas2 166 轮里有 144 轮是这么中途结束的，同时组队的
+        # 队员（oas1）只能跟着散伙，每轮都刷不满 120 场。
+        # 现在改为：庭院 / 探索 / 组队界面都算房间丢失，就地重建房间、重新邀请、
+        # 接着原来的计数继续刷；连续重建 max_rebuild 次仍失败才放弃本轮。
+        rebuild_count = 0
+        max_rebuild = 4
         # 这个时候我已经进入房间了哦
         while 1:
             self.screenshot()
@@ -247,10 +287,26 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
 
             # 如果没有进入房间那就不需要后面的邀请
             if not self.is_in_room():
-                if self.is_room_dead():
-                    logger.warning('Orochi task failed')
-                    success = False
-                    break
+                # 房间丢失判定：庭院（模板快判 + OCR 兜底）、探索界面、组队界面
+                room_lost = (self._is_page_main_by_exploration()
+                             or self.is_room_dead()
+                             or self._is_page_main())
+                if room_lost:
+                    if rebuild_count >= max_rebuild:
+                        logger.warning(f'Orochi room lost {rebuild_count} times in a row, '
+                                       f'give up this round at {self.current_count}/{self.limit_count}')
+                        success = False
+                        break
+                    rebuild_count += 1
+                    logger.warning(f'Orochi room lost at {self.current_count}/{self.limit_count}, '
+                                   f'rebuild room and re-invite ({rebuild_count}/{max_rebuild})')
+                    self.device.stuck_record_clear()
+                    if not self._leader_rebuild_room():
+                        logger.warning('Rebuild room failed, retry in next loop')
+                        continue
+                    # 新房间要重新邀请第一个队员
+                    is_first = True
+                    continue
                 continue
 
             # 点击挑战
@@ -308,6 +364,11 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         idle_timeout = timedelta(minutes=5)
         idle_start = datetime.now()
         success = True
+        # 队长中途回庭院重建房间时（见 run_leader 里的 rebuild 逻辑），队员会先遇到
+        # 「房间被销毁」或「队长跑路」。原逻辑一遇到就 break 结束整轮，于是两边
+        # 一散伙就都刷不满 120 场。现在允许连续失败几次，回庭院接着等下一封邀请。
+        wait_fail = 0
+        max_wait_fail = 6
         while 1:
             self.screenshot()
 
@@ -329,9 +390,20 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                 idle_start = datetime.now()
                 self.device.stuck_record_clear()
                 if self.wait_battle(wait_time=self.config.orochi.invite_config.wait_time):
+                    wait_fail = 0
                     self.run_general_battle(config=self.config.orochi.general_battle_config)
                 else:
-                    break
+                    # wait_battle 内部已经 exit_room 回到庭院。队长可能只是丢了房间
+                    # 正在重建，所以先别结束整轮，回庭院继续等邀请。
+                    wait_fail += 1
+                    if wait_fail >= max_wait_fail:
+                        logger.warning(f'Member: wait battle failed {wait_fail} times in a row, '
+                                       f'exit this orochi task at {self.current_count}/{self.limit_count}')
+                        break
+                    logger.warning(f'Member: wait battle failed ({wait_fail}/{max_wait_fail}), '
+                                   f'keep waiting for invite (count={self.current_count}/{self.limit_count})')
+                    idle_start = datetime.now()
+                    continue
             # 队长秒开的时候，检测是否进入到战斗中
             elif self.check_take_over_battle(False, config=self.config.orochi.general_battle_config):
                 idle_start = datetime.now()
