@@ -43,6 +43,21 @@ C_CONFIRM_EXIT_OK = RuleClick(roi_front=(664, 407, 180, 72),
                               roi_back=(664, 407, 180, 72),
                               name="confirm_exit_ok")
 
+# 战斗结算 / 「点击屏幕继续」类界面（胜利后的贪食鬼结算、失败结算）不属于任何 ui page，
+# 但点一下就回房间或庭院。实例启动时游戏若正停在这里，原逻辑只会点 random_click()
+# 的"安全空地"——它刻意避开屏幕底部的按钮栏，正好点不到「点击屏幕继续」，几次之后
+# 判 GamePageUnknownError 并强杀重启游戏。
+# 见 log/error/1794070816085 与 1794070816452（2026-11-08 01:00:16 oas1 / oas2 同一秒
+# 双双报 Game page unknown，报错截图就是贪食鬼结算屏 +「点击屏幕继续」）。
+# 文字实测出现在 y≈555~585（胜利结算）与 y≈679~709（失败结算的第二处），
+# ROI (300,540,700,200) 一网打尽；落点沿用底部空白 (720,645,200,70)，避开中间那排头像。
+O_SETTLE_CONTINUE = RuleOcr(roi=(300, 540, 700, 200), area=(300, 540, 700, 200),
+                            mode="Full", method="Default", keyword="",
+                            name="settle_continue")
+C_SETTLE_CONTINUE = RuleClick(roi_front=(720, 645, 200, 70),
+                              roi_back=(720, 645, 200, 70),
+                              name="settle_continue")
+
 
 class GameUi(BaseTask, GameUiAssets):
     ui_current: Page = None
@@ -181,6 +196,11 @@ class GameUi(BaseTask, GameUiAssets):
                 # 2026-09-30 02:48 的 UI_UI_BACK_YELLOW 与 SAFE_RANDOM_CLICK 互相打架
                 # 触发的 GameTooManyClickError。
                 # 所以前几次先刷新截图等一等，给动画留时间，之后才戳。
+                # 但在乱戳之前，先看是不是「点击屏幕继续 / 再次挑战」这种点一下就走的
+                # 结算界面：它同样不属于任何 ui page，靠 random_click() 点不掉，
+                # 会让启动阶段的 ui_get_current_page 直接判 GamePageUnknownError。
+                if self._click_settle_continue():
+                    continue
                 if stale_refresh < max_stale_refresh:
                     stale_refresh += 1
                     logger.info(f'Unknown page, refresh screen and wait ({stale_refresh}/{max_stale_refresh})')
@@ -203,6 +223,30 @@ class GameUi(BaseTask, GameUiAssets):
         logger.warning('Supported page: Any page with a "HOME" button on the upper-right')
         logger.critical("Please switch to a supported page before starting oas")
         raise GamePageUnknownError
+
+    def _click_settle_continue(self) -> bool:
+        """未知页面兜底：识别并点掉「点击屏幕继续 / 再次挑战」结算界面。
+
+        ui_get_current_page 只认注册过的 ui page，战斗结算屏（贪食鬼结算、失败结算）
+        不在列表里。启动实例时游戏若停在这里，原逻辑点 random_click() 的安全空地
+        点不到"点击屏幕继续"，几秒后直接 GamePageUnknownError 强杀重启。
+
+        :return: 命中并点过返回 True，调用方应 continue 重新识别页面
+        """
+        try:
+            results = O_SETTLE_CONTINUE.detect_and_ocr(self.device.image)
+        except Exception as e:
+            logger.warning(f'结算界面 OCR 失败，跳过: {e}')
+            return False
+        text = ''.join(r.ocr_text for r in results)
+        if not text:
+            return False
+        if '点击屏幕继续' in text or '点击继续' in text or '再次挑战' in text:
+            logger.info(f'未知页面识别到结算界面，点击继续 ({text[:16]})')
+            self.click(C_SETTLE_CONTINUE, interval=1)
+            sleep(1)
+            return True
+        return False
 
     def ui_button_interval_reset(self, button):
         """
