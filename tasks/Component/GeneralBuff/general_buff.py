@@ -239,6 +239,53 @@ class GeneralBuff(BaseTask, GeneralBuffAssets):
             if not self.ui_click(click=self.I_OPEN_YELLOW, stop=self.I_CLOSE_RED, interval=1, timeout=10):
                 logger.warning('Close soul buff failed')
 
+    def soul_on(self, max_attempts: int = 6) -> bool:
+        """
+        打开御魂加成，并且要「确认真的开启了」才算成功。
+
+        相比 soul(is_open=True) 的区别：soul() 在 ui_click 超时后只打一条 warning
+        就放弃（开关没点开也会继续跑任务），本方法会反复确认：
+
+        每次尝试：
+          1. 重新截图，定位「御魂加成」这一行；找不到就滑动 buff 列表后再试
+          2. 判断开关状态 —— 已经是开启态就直接返回 True
+          3. 是关闭态就点一下开关，回到第 1 步重新截图确认
+          4. 开关图都匹配不到（滑块错位）也滑动一下重试
+
+        直到确认开启，或尝试次数用完。
+
+        :param max_attempts: 最大尝试次数（有界循环，避免无限重试卡死任务）
+        :return: True 表示已确认御魂加成处于开启状态
+        """
+        for attempt in range(1, max_attempts + 1):
+            self.reject_invite()
+            self.screenshot()
+
+            area = self.get_area_image(self.I_SOUL)
+            if not area:
+                # 「御魂加成」这一行没露出来，滑动 buff 列表后再看
+                logger.warning(f'Soul buff row not found, scroll and retry ({attempt}/{max_attempts})')
+                self.swipe(self.S_BUFF_UP, interval=1)
+                continue
+
+            self.set_switch_area(area)
+
+            if self.appear(self.I_OPEN_YELLOW):
+                logger.info(f'Soul buff confirmed ON (attempt {attempt})')
+                return True
+
+            if self.appear(self.I_CLOSE_RED):
+                logger.info(f'Soul buff is OFF, click switch to open ({attempt}/{max_attempts})')
+                self.appear_then_click(self.I_CLOSE_RED, interval=1)
+                continue
+
+            # 黄色开启图、红色关闭图都没匹配到：滑块位置异常，滑动重试
+            logger.warning(f'Soul buff switch state unclear, scroll and retry ({attempt}/{max_attempts})')
+            self.swipe(self.S_BUFF_UP, interval=1)
+
+        logger.error(f'Soul buff still not confirmed ON after {max_attempts} attempts')
+        return False
+
     def reject_invite(self):
         from tasks.Component.GeneralInvite.assets import GeneralInviteAssets as gia
         while 1:

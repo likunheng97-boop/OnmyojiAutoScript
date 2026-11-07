@@ -108,7 +108,9 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             self.ui_goto(page_main)
             if config.orochi_config.soul_buff_enable:
                 self.open_buff()
-                self.soul(is_open=True)
+                # 开启御魂加成后再确认一次真的开了：没开就重点，直到确认开启或重试用完
+                if not self.soul_on():
+                    logger.warning('Soul buff still not ON after retries, continue task anyway')
                 self.close_buff()
 
         success = True
