@@ -391,6 +391,18 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                 self.device.stuck_record_clear()
                 if self.wait_battle(wait_time=self.config.orochi.invite_config.wait_time):
                     wait_fail = 0
+                    # 队员每场算两次的元凶之一：wait_battle() 只判断「还在不在房间里」，
+                    # 被踢回庭院时它同样返回 True，紧接着 run_general_battle 就把上一场
+                    # 的结算残留当成新一局再 +1。真开战的瞬间画面是战斗或加载界面，
+                    # 不会命中庭院，所以这里命中就说明根本没开成，跳过本局计数。
+                    # 2026-11-08 15:04 实测：oas1 报 120/120 刷满时 oas2 才 52/120，
+                    # 队员实际只打了约 60 场；07:41:34~07:42:14 一段日志里
+                    # 队长 35→36、队员 36→37→38→39 可逐场对上。
+                    if self._is_page_main():
+                        logger.warning('Member: wait_battle reported battle started but page is '
+                                       'main, skip counting this round')
+                        idle_start = datetime.now()
+                        continue
                     self.run_general_battle(config=self.config.orochi.general_battle_config)
                 else:
                     # wait_battle 内部已经 exit_room 回到庭院。队长可能只是丢了房间
@@ -404,8 +416,12 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                                    f'keep waiting for invite (count={self.current_count}/{self.limit_count})')
                     idle_start = datetime.now()
                     continue
-            # 队长秒开的时候，检测是否进入到战斗中
-            elif self.check_take_over_battle(False, config=self.config.orochi.general_battle_config):
+            # 队长秒开的时候，检测是否进入到战斗中。
+            # 元凶之二：is_in_battle() 把 I_WIN / I_REWARD（结算界面）也算作「在战斗中」，
+            # 于是回庭院时结算残留会让 check_take_over_battle 返回 True 并再计一次数。
+            # 真·秒开时画面是战斗界面，不会是庭院，先排除庭院即可。
+            elif not self._is_page_main() and self.check_take_over_battle(
+                    False, config=self.config.orochi.general_battle_config):
                 idle_start = datetime.now()
                 continue
             else:
