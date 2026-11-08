@@ -700,9 +700,12 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         # 真战斗里 I_REWARD 也可能一闪而过，那种时候别去点（落点在底部技能栏附近）
         if self.is_in_real_battle(False):
             return False
-        if self._settle_try >= 20:
+        # getattr 兜底：万一以后从别的入口调用而没走 run_member 的初始化，
+        # 不要变成 AttributeError 把整轮任务打断（2026-11-08 的 soul_on 就是这么炸的）
+        try_count = getattr(self, '_settle_try', 0)
+        if try_count >= 20:
             return False
-        self._settle_try += 1
+        self._settle_try = try_count + 1
         logger.info(f'结算层压在画面上，点击推进 ({self._settle_try}/20)')
         self.click(C_CLICK_TO_CONTINUE)
         sleep(1.2)
