@@ -1,9 +1,11 @@
 # This Python file uses the following encoding: utf-8
 # @author runhey
 # github https://github.com/runhey
+import json
 import random
 from time import sleep
 from datetime import time, datetime, timedelta
+from pathlib import Path
 
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
 from tasks.Component.GeneralInvite.general_invite import GeneralInvite
@@ -80,6 +82,70 @@ PAGE_MAIN_EXPLORATION_THRESHOLD = 0.60
 
 class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi, SwitchSoul, OrochiAssets, TrueOrochiAssets):
 
+    # ---------------- 本轮场次持久化 ----------------
+    # 为什么要做：GameStuckError / 游戏崩溃会让 OAS 重启游戏并重开任务，
+    # run() 里 current_count 一律归零，于是已经刷掉的几十场白干。
+    # 2026-11-08 22:04 oas2 在 37/120 被 60 秒看门狗误杀，重启后从 1 开始，
+    # 而 oas1 是 44 —— 两台彻底错位，还得再刷一小时。
+    # 现在每场结束把 (场次, 目标, 时间) 写到 log/ 下按实例区分的小文件，
+    # 下次任务启动时若仍在同一轮窗口内就接着数。
+    # 内存影响：只有一个 str 路径 + 两个 int 标量，文件同一路径覆盖写，
+    # 不累积、不随运行时长增长。
+    ROUND_STATE_TTL_HOURS = 4
+
+    def _round_state_path(self) -> Path:
+        try:
+            name = getattr(self.config, 'config_name', 'default')
+        except Exception:
+            name = 'default'
+        return Path.cwd() / 'log' / f'.orochi_round_{name}.json'
+
+    def _restore_round_count(self, limit_count: int) -> None:
+        """任务启动时尝试续接上一轮场次。
+
+        只在「同一轮」时续接：目标场次一致、上一轮没打满、且距上次记录
+        不超过 ROUND_STATE_TTL_HOURS 小时。打满了就说明是新一轮，从 0 开始。
+        """
+        path = self._round_state_path()
+        try:
+            if not path.exists():
+                return
+            data = json.loads(path.read_text(encoding='utf-8'))
+            count = int(data.get('count', 0))
+            limit = int(data.get('limit', 0))
+            saved_at = datetime.fromisoformat(str(data.get('saved_at')))
+        except Exception as e:
+            logger.warning(f'上一轮场次记录读不出来({e})，本次从 0 开始')
+            return
+        if limit != limit_count:
+            logger.info(f'场次目标变了（上次 {limit} / 本次 {limit_count}），不续接，从 0 开始')
+            return
+        if count <= 0 or count >= limit_count:
+            return
+        if datetime.now() - saved_at > timedelta(hours=self.ROUND_STATE_TTL_HOURS):
+            logger.info(f'上一轮场次记录已过期（{saved_at:%m-%d %H:%M}），从 0 开始')
+            return
+        self.current_count = count
+        self._saved_count = count
+        logger.warning(f'续接上一轮场次：{count}/{limit_count}'
+                       f'（上次记录 {saved_at:%H:%M:%S}，本轮接着刷，不重新计数）')
+
+    def _save_round_count(self) -> None:
+        """每场结束时落盘一次。场次没变就不写，避免每轮循环都碰磁盘。"""
+        if self.current_count == getattr(self, '_saved_count', -1):
+            return
+        path = self._round_state_path()
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            data = {'count': self.current_count,
+                    'limit': self.limit_count,
+                    'saved_at': datetime.now().isoformat(timespec='seconds')}
+            path.write_text(json.dumps(data, ensure_ascii=False), encoding='utf-8')
+            self._saved_count = self.current_count
+        except Exception as e:
+            # 落盘失败不能影响刷本，最多是这次卡死后进度回退
+            logger.debug(f'场次记录写入失败: {e}')
+
     def run(self) -> bool:
         # 御魂切换方式一
         if self.config.orochi.switch_soul.enable:
@@ -101,6 +167,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         self.current_count = 0
         self.limit_count: int = limit_count
         self.limit_time: timedelta = timedelta(hours=limit_time.hour, minutes=limit_time.minute, seconds=limit_time.second)
+        # 卡死强杀 / 游戏崩溃重启后接着上一轮的数继续刷（打满了才会归零）
+        self._restore_round_count(limit_count)
 
         config: Orochi = self.config.orochi
         if not self.is_in_battle(True):
@@ -264,6 +332,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         # 这个时候我已经进入房间了哦
         while 1:
             self.screenshot()
+            self._save_round_count()
             # 无论胜利与否, 都会出现是否邀请一次队友
             # 区别在于，失败的话不会出现那个勾选默认邀请的框
             if self.check_and_invite(self.config.orochi.invite_config.default_invite):
@@ -373,6 +442,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         self._settle_try = 0
         while 1:
             self.screenshot()
+            self._save_round_count()
 
             # 检查猫咪奖励
             if self.appear_then_click(self.I_PET_PRESENT, action=self.C_WIN_3, interval=1):
@@ -477,6 +547,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
 
         while 1:
             self.screenshot()
+            self._save_round_count()
 
             # 检查猫咪奖励
             if self.appear_then_click(self.I_PET_PRESENT, action=self.C_WIN_3, interval=1):
@@ -540,6 +611,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         success = True
         while 1:
             self.screenshot()
+            self._save_round_count()
             # 无论胜利与否, 都会出现是否邀请一次队友
             # 区别在于，失败的话不会出现那个勾选默认邀请的框
             if self.check_and_invite(self.config.orochi.invite_config.default_invite):
