@@ -2,6 +2,7 @@
 # @author runhey
 # github https://github.com/runhey
 import json
+import os
 import random
 from time import sleep
 from datetime import time, datetime, timedelta
@@ -103,8 +104,17 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
     def _restore_round_count(self, limit_count: int) -> None:
         """任务启动时尝试续接上一轮场次。
 
-        只在「同一轮」时续接：目标场次一致、上一轮没打满、且距上次记录
-        不超过 ROUND_STATE_TTL_HOURS 小时。打满了就说明是新一轮，从 0 开始。
+        「同一轮」的判定：目标场次一致、上一轮没打满、距上次记录不超过
+        ROUND_STATE_TTL_HOURS 小时，**并且是同一次脚本进程**（pid 相同）。
+
+        最后那条最容易被忽略：用户在界面上点了停止再启动，OAS 是
+        ScriptProcess.stop() -> terminate() 把子进程杀掉，再 start() 起一个
+        全新进程，地址空间全清空，等于「重新开始」。这时候如果还去读上一轮
+        的记录，两台实例就会各自接着自己的旧进度跑（实测 2026-11-09 01:18
+        oas1 续接 49、oas2 续接 12，一个 51 一个 14，从头就错开）。
+        续接只应该服务于「同一进程内任务失败重跑」——script.py 的 loop 里
+        handle_error 会让任务在**同一个子进程**里 continue 重来，pid 不变。
+        所以用 pid 区分：进程没换就续接（崩溃/游戏重启），进程换了就是从 1 开始。
         """
         path = self._round_state_path()
         try:
@@ -116,6 +126,11 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             saved_at = datetime.fromisoformat(str(data.get('saved_at')))
         except Exception as e:
             logger.warning(f'上一轮场次记录读不出来({e})，本次从 0 开始')
+            return
+        prev_pid = data.get('pid')
+        if prev_pid is None or int(prev_pid) != os.getpid():
+            logger.info(f'新的一次启动（上次 pid={prev_pid} / 本次 {os.getpid()}），'
+                        f'上一轮 {count}/{limit} 不再续接，从 1 开始重新计')
             return
         if limit != limit_count:
             logger.info(f'场次目标变了（上次 {limit} / 本次 {limit_count}），不续接，从 0 开始')
@@ -139,6 +154,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             path.parent.mkdir(parents=True, exist_ok=True)
             data = {'count': self.current_count,
                     'limit': self.limit_count,
+                    # pid 用来区分「同一进程内任务重跑」和「用户手动停止后重开」
+                    'pid': os.getpid(),
                     'saved_at': datetime.now().isoformat(timespec='seconds')}
             path.write_text(json.dumps(data, ensure_ascii=False), encoding='utf-8')
             self._saved_count = self.current_count
