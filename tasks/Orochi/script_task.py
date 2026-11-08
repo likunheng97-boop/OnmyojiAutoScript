@@ -369,6 +369,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         # 一散伙就都刷不满 120 场。现在允许连续失败几次，回庭院接着等下一封邀请。
         wait_fail = 0
         max_wait_fail = 6
+        # 结算层连续点击次数（_clear_settle_layer 用），清零时机 = 画面上的结算层消失
+        self._settle_try = 0
         while 1:
             self.screenshot()
 
@@ -382,6 +384,14 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             if datetime.now() - self.start_time >= self.limit_time:
                 logger.info('Orochi time limit out')
                 break
+
+            # 结算层清理（模板 8ms）：胜利/失败的结算与掉落展示是压在庭院上的
+            # 半透明层，不点掉就永远停在那里；而 _is_page_main() 在这种画面上会
+            # 读到底层按钮栏误判成庭院，下面所有分支就只会「等邀请」、不再点击，
+            # 空转满 5 分钟整轮退出（2026-11-08 16:25 oas1 卡死即此）。
+            if self._clear_settle_layer():
+                idle_start = datetime.now()
+                continue
 
             if self.check_then_accept():
                 continue
@@ -657,6 +667,50 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         return self.appear(self.I_MAIN_GOTO_EXPLORATION,
                            threshold=PAGE_MAIN_EXPLORATION_THRESHOLD)
 
+    def _is_settle_layer(self) -> bool:
+        """画面中央是否压着一层奖励结算（I_REWARD = 结算框里的奖励图标）。
+
+        胜利/失败的结算、掉落展示都是**半透明层**，压在庭院之上：底部的
+        「组队 / 好友」还能透出来被 OCR 读到，于是 _is_page_main() 会把它误判成
+        庭院（2026-11-08 16:25:13 实测日志 `[PAGE_MAIN] 庭院底部按钮命中 ['组队', '好友']`，
+        而当时真实画面是「掉落展示 + 底部 点击屏幕继续」）。
+
+        判别力实测（settle_layer_probe.py）：
+        - 133 张 log/error 报错截图里，该模板只在 33 张结算界面上命中，分数 0.985~0.987；
+        - 房间画面 0.365、战斗/加成画面 0.409、庭院 0.3x —— 0.8 的阈值非常干净。
+        模板匹配约 8ms，比 OCR 快 20 倍，适合每个主循环都查一次。
+        """
+        return self.appear(self.I_REWARD)
+
+    def _clear_settle_layer(self) -> bool:
+        """结算层压着画面就点掉它，返回本轮是否点过（点过就 continue 重新判断画面）。
+
+        为什么必须有这一步：结算层没人点就永远停在那里。battle_wait 的未知界面兜底
+        虽然会 OCR「点击屏幕继续」，但它要求 idle_round >= 6（约 2.5 秒一次），而且
+        结算动画刚出现的那一两秒读不到文字；此时 _is_page_main() 已经靠下层按钮判成
+        庭院并放弃本场，控制权回到 run_member 走「庭院里等邀请」分支 —— 那个分支
+        只等邀请、不含任何点击，于是结算层再没人处理，空转满 5 分钟整轮退出。
+        这就是 2026-11-08 16:25 用户看到的「oas1 卡在结算界面」。
+
+        最多连点 20 次（约 25 秒）：真点不掉说明不是普通结算层，交回上层按空闲超时处理。
+        """
+        if not self._is_settle_layer():
+            self._settle_try = 0
+            return False
+        # 真战斗里 I_REWARD 也可能一闪而过，那种时候别去点（落点在底部技能栏附近）
+        if self.is_in_real_battle(False):
+            return False
+        if self._settle_try >= 20:
+            return False
+        self._settle_try += 1
+        logger.info(f'结算层压在画面上，点击推进 ({self._settle_try}/20)')
+        self.click(C_CLICK_TO_CONTINUE)
+        sleep(1.2)
+        # self.click() 内部会走 stuck_record_clear()，把 300 秒的长等待降级成 60 秒，
+        # 这里补回来（与 battle_wait 未知界面兜底里的处理一致）
+        self.device.stuck_record_add('BATTLE_STATUS_S')
+        return True
+
     def _is_page_main(self) -> bool:
         """当前画面是不是庭院主界面。
 
@@ -668,6 +722,11 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         「纳物库 / 阴阳寮 / 花合战」这类按钮词；要求**至少命中 2 个**不同的按钮，
         单个词命中不足以下结论。
         """
+        # 结算/掉落层压在庭院上是半透明的，底部按钮栏能透出来被 OCR 读到，
+        # 会把这个画面误判成庭院。有 I_REWARD（结算框）就说明上方还有一层没点掉，
+        # 不算「干净的庭院」——让调用方走 _clear_settle_layer() 去点它。
+        if self._is_settle_layer():
+            return False
         if self._is_page_main_by_exploration():
             return True
         try:
