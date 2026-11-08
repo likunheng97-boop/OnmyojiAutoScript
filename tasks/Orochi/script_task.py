@@ -814,8 +814,43 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         # 「点一下屏幕才能推进」的界面（战前加成 / 失败结算）已经被点了多少次。
         # 加个上限是为了别在真点不掉的画面上一直点到看门狗强杀游戏。
         advance_try = 0
+        # 单场战斗的时长看门狗（自救用，不是判死用）。
+        # 正常一场 25~30 秒（2026-11-08 21:59~22:03 连续 9 场实测都是 26~27 秒）。
+        # soft：超过就点一下屏幕，帮可能僵住的动画推进；最多 3 次。
+        # hard：超过就主动把控制权交回外层轮询（战斗界面本来就会自己打完/打完结算），
+        #       硬上限必须 < 300 秒（BATTLE_STATUS_S 的长等待豁免），否则还是会被
+        #       GameStuckError 强杀游戏 —— 强杀的代价是整个任务重启、本轮 120 场计数归零。
+        battle_start = datetime.now()
+        battle_soft_limit = 120
+        battle_hard_limit = 180
+        battle_advance_try = 0
         while 1:
             self.screenshot()
+            # ⚠️ 每轮补一次 BATTLE_STATUS_S，别删！
+            # swipe / click 都会走 device.handle_control_check() -> stuck_record_clear()，
+            # 把这条例外记录连同 60/300 秒计时器一起清掉。清掉之后「战斗中长等待」的
+            # 300 秒豁免就失效了，只要 60 秒内没有任何点击（random_click_swipt 命中率
+            # 只有 4/501≈0.8%，还带 interval=20 节流，60 秒里常常一次都不点），
+            # stuck_record_check() 就会抛 GameStuckError 把游戏强杀重启。
+            # 2026-11-08 22:03:56 的第 37 场就是这么死的：random_click_swipt 的 swipe
+            # 清掉了记录，那场偏偏慢到 66 秒（oas1 22:04:59 才 GB_WIN），oas2 在
+            # 22:04:56 整 60 秒抛 Wait too long / Waiting for set()（空集合），
+            # 队长重启游戏 -> 队员 22:05:16 Leader run away -> 两边 37/120 全部归零。
+            # 每轮补一次是幂等的（set.add），唯一代价是一个 dict 查找。
+            if 'BATTLE_STATUS_S' not in self.device.detect_record:
+                self.device.stuck_record_add('BATTLE_STATUS_S')
+            battle_elapsed = (datetime.now() - battle_start).total_seconds()
+            if battle_elapsed > battle_soft_limit:
+                if battle_advance_try >= 3 or battle_elapsed > battle_hard_limit:
+                    logger.warning(f'本局已打 {int(battle_elapsed)} 秒仍未结束，放弃本局并交回外层轮询'
+                                   f'（保留计数 {self.current_count}，不重启游戏）')
+                    return False
+                battle_advance_try += 1
+                logger.warning(f'本局已打 {int(battle_elapsed)} 秒仍未结束，点一下屏幕尝试推进'
+                               f'（{battle_advance_try}/3）')
+                self.click(C_CLICK_TO_CONTINUE)
+                sleep(2)
+                continue
             if self.appear(self.I_GI_SURE) and self.appear(self.I_GI_CANCEL):
                 idle_round = 0
                 # 再加一层 OCR 确认：只处理标题含「邀请队友」的弹窗。
