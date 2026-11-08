@@ -36,7 +36,13 @@ class GeneralBattle(BattleWait, GeneralBuff):
         # 本人选择的策略是只要进来了就算一次，不管是不是打完了
         # 战斗统计
         self.current_count += 1
-        logger.info(f"Current count: {self.current_count}")
+        # 有明确「本轮上限」的任务（如八岐大蛇 limit_count=120）连目标一起打，
+        # 日志里就能直接看出本轮完成次数 / 目标；没有上限的照旧只打当前值。
+        _limit = getattr(self, "limit_count", None)
+        if isinstance(_limit, int) and _limit > 0:
+            logger.info(f"Current count: {self.current_count} / {_limit}")
+        else:
+            logger.info(f"Current count: {self.current_count}")
         # 战前设置
         self.battle_before(buff, config)
         # 绿标
