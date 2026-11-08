@@ -41,6 +41,10 @@ class ScriptProcess(ScriptWSManager):
             logger.warning(f'Script {self.config_name} is already running and first stop it')
             # stop() 也是 async，漏 await 会让旧子进程变成没人管的孤儿进程
             await self.stop()
+            # stop() 会把 state 置成 INACTIVE 并广播，重启后要改回来，
+            # 否则界面/客户端会一直显示已停止
+            self.state = ScriptState.RUNNING
+            await self.broadcast_state({"state": self.state})
         self._process = multiprocessing.Process(target=func,
                                                 args=(self.config_name, self.state_queue, self.log_pipe_in,),
                                                 name=self.config_name,
