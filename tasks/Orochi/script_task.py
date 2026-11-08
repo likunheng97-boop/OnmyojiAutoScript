@@ -391,16 +391,13 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                 self.device.stuck_record_clear()
                 if self.wait_battle(wait_time=self.config.orochi.invite_config.wait_time):
                     wait_fail = 0
-                    # 队员每场算两次的元凶之一：wait_battle() 只判断「还在不在房间里」，
-                    # 被踢回庭院时它同样返回 True，紧接着 run_general_battle 就把上一场
-                    # 的结算残留当成新一局再 +1。真开战的瞬间画面是战斗或加载界面，
-                    # 不会命中庭院，所以这里命中就说明根本没开成，跳过本局计数。
-                    # 2026-11-08 15:04 实测：oas1 报 120/120 刷满时 oas2 才 52/120，
-                    # 队员实际只打了约 60 场；07:41:34~07:42:14 一段日志里
-                    # 队长 35→36、队员 36→37→38→39 可逐场对上。
-                    if self._is_page_main():
-                        logger.warning('Member: wait_battle reported battle started but page is '
-                                       'main, skip counting this round')
+                    # wait_battle() 只判断「还在不在房间里」，停在结算层时它同样返回
+                    # True，随后 run_general_battle 就把上一场的结算残留当成新一局
+                    # 再 +1。所以要正面确认：看到真战斗或准备界面才计入。
+                    if not self._battle_confirmed(timeout=8):
+                        logger.warning('Member: wait_battle said battle started but neither battle '
+                                       f'nor prepare UI in 8s (page_main={self._is_page_main()}), '
+                                       'skip counting this round')
                         idle_start = datetime.now()
                         continue
                     self.run_general_battle(config=self.config.orochi.general_battle_config)
@@ -417,11 +414,17 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                     idle_start = datetime.now()
                     continue
             # 队长秒开的时候，检测是否进入到战斗中。
-            # 元凶之二：is_in_battle() 把 I_WIN / I_REWARD（结算界面）也算作「在战斗中」，
-            # 于是回庭院时结算残留会让 check_take_over_battle 返回 True 并再计一次数。
-            # 真·秒开时画面是战斗界面，不会是庭院，先排除庭院即可。
-            elif not self._is_page_main() and self.check_take_over_battle(
-                    False, config=self.config.orochi.general_battle_config):
+            # is_in_battle() 把 I_WIN / I_REWARD（结算层）也算「在战斗中」，队长散伙后
+            # 结算残留会让 check_take_over_battle 返回 True 并凭空 +1（实测这种假战斗
+            # 每场只持续 5.4~6.1 秒，2026-11-08 共 41 次），所以这里改成必须先看到
+            # 真战斗（I_BATTLE_INFO）或准备界面（I_PREPARE_* / I_BUFF）才算真的开打。
+            elif not self._is_page_main() and self._battle_confirmed(timeout=6):
+                if self.is_in_real_battle(False):
+                    # 已经在真战斗里（队长秒开），接管并把这一局计入
+                    self.check_take_over_battle(False, config=self.config.orochi.general_battle_config)
+                else:
+                    # 停在准备界面：和 wait_battle 返回 True 后是同一条路，正常开打
+                    self.run_general_battle(config=self.config.orochi.general_battle_config)
                 idle_start = datetime.now()
                 continue
             else:
@@ -676,9 +679,43 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         text = ''.join(r.ocr_text for r in results).replace(' ', '')
         hits = [kw for kw in O_PAGE_MAIN_KEYWORDS if kw in text]
         if len(hits) >= 2:
-            logger.info(f'[PAGE_MAIN] 庭院底部按钮命中 {hits}')
+            # 在庭院干等邀请时这里每 0.6 秒被调一次，原来每次都打一行
+            # （2026-11-08 15:56:31~15:56:40 十秒里 19 行），只在「刚进入庭院」时打一次
+            if not getattr(self, '_page_main_logged', False):
+                logger.info(f'[PAGE_MAIN] 庭院底部按钮命中 {hits}')
+                self._page_main_logged = True
             return True
+        self._page_main_logged = False
         return False
+
+    def _battle_confirmed(self, timeout: float = 8.0) -> bool:
+        """等最多 timeout 秒，正面确认「真的开打了」：出现真战斗 UI 或准备界面。
+
+        为什么不能用 is_in_battle()：它把 I_WIN / I_REWARD / I_FRIENDS 也算「在战斗中」。
+        队长散伙后游戏把队员丢在结算层上（半透明的胜利/加成结算压在庭院之上），
+        这时 is_in_battle() 为真、_is_page_main() 又可能因为 OCR 读到下层按钮而误判，
+        于是结算残留被当成新一局，current_count 凭空 +1。
+
+        2026-11-08 全天实测证据：
+        - 这种假战斗在 oas1（队员）身上出现 41 次，每次从「开战」到「胜利」只有
+          5.4~6.1 秒（02:18:31 / 06:19:24 / 07:41:20 / 09:25:19 / 14:28:11 /
+          15:15:29 / 15:56:42 …），每一场都对应监控里 d=oas1-oas2 的 +1。
+        - 同期 oas2（队长）1173 场、最短 25 秒，一次假战斗都没有；oas1 的真战斗
+          最短 9.8 秒（1407 场）。所以「5 秒就赢」只可能是结算残留。
+        - 这些假战斗里 battle_before() 整整跑了 5 秒超时（06:19:24~06:19:29），
+          说明那段时间里 is_in_real_battle() 和 is_in_prepare() **都是假**
+          （否则它早就 return 或去点准备了），拿这两个做正面判据是安全的。
+
+        真战斗用 I_BATTLE_INFO（战斗界面左上角状态条），准备界面用
+        I_BUFF / I_PREPARE_HIGHLIGHT / I_PREPARE_DARK，结算层三者都不具备。
+        """
+        deadline = datetime.now() + timedelta(seconds=timeout)
+        while 1:
+            if self.is_in_real_battle() or self.is_in_prepare(False):
+                return True
+            if datetime.now() >= deadline:
+                return False
+            sleep(0.3)
 
     def battle_wait(self, random_click_swipt_enable: bool) -> bool:
         """
