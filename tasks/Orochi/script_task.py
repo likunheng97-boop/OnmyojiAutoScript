@@ -612,7 +612,10 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         真战斗中会点到式神弹出技能详情。
         """
         try:
-            results = O_SETTLE_ADVANCE.detect_and_ocr(self.device.image)
+            # logDisplay=False：这个判定每 5 秒就执行一次（battle_wait 的未知界面兜底），
+            # 开着会把每次 OCR 的原文都写一行日志 —— 2026-11-08 实测占全天日志 45%。
+            # 命中后的关键结果由调用方打印（「卡在 xxx 界面，主动点击推进」），信息不丢。
+            results = O_SETTLE_ADVANCE.detect_and_ocr(self.device.image, logDisplay=False)
         except Exception as e:
             logger.warning(f'OCR 失败，跳过结算界面判定: {e}')
             return ''
@@ -649,7 +652,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         if self._is_page_main_by_exploration():
             return True
         try:
-            results = O_PAGE_MAIN.detect_and_ocr(self.device.image)
+            # 同上：每 5 秒一次的兜底判定，关掉逐次 OCR 原文（命中时下面会打 [PAGE_MAIN]）
+            results = O_PAGE_MAIN.detect_and_ocr(self.device.image, logDisplay=False)
         except Exception as e:
             logger.warning(f'OCR 失败，跳过庭院判定: {e}')
             return False
@@ -674,7 +678,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         self.C_REWARD_2.name = 'C_REWARD'
         self.C_REWARD_3.name = 'C_REWARD'
         # 战斗过程 随机点击和滑动 防封
-        logger.info("Start battle process")
+        # 每局都打一次、信息量为零（下一行的 GENERAL BATTLE START 已经标出开战），降为 debug
+        logger.debug("Start battle process")
         # 挑战失败后游戏会弹「是否邀请队友继续进行战斗？」（卷轴 + 取消/确定）。
         # 原来这里只认 I_FALSE（结算界面的「失败」字样），但 2026-10 UI 改版后该模板
         # 已经失配（实测在失败弹窗截图上只有 0.0541，阈值 0.8），于是这场战斗**没有任何

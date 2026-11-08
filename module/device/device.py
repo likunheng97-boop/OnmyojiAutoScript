@@ -131,7 +131,9 @@ class Device(Platform, Screenshot, Control, AppControl):
         :return:
         """
         self.detect_record.add(str(button))
-        logger.info(f'Add stuck record: {button}')
+        # 每次进战斗都会打一次，且与 stuck_record_clear 成对出现，正常流程里没有信息量，
+        # 只在怀疑卡死计时器有问题时才需要看，降为 debug。
+        logger.debug(f'Add stuck record: {button}')
 
     def stuck_record_clear(self):
         self.detect_record = set()
