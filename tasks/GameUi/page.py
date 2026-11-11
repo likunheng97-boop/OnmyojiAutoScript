@@ -54,7 +54,10 @@ class Page:
 #登录login
 page_login = Page(G.I_CHECK_LOGIN_FORM)
 # Main Home 主页
-page_main = Page(G.I_CHECK_MAIN)
+# 双锚点：经典樱花庭院（I_CHECK_MAIN）与 2026-11-11 水墨风新版（I_CHECK_MAIN_NEW）。
+# 两台模拟器的庭院 UI 版本不一样，必须都能认。Page.check_button 支持 list，
+# ui_page_appear() 会逐个尝试，任一命中即算该页。
+page_main = Page([G.I_CHECK_MAIN, G.I_CHECK_MAIN_NEW])
 page_main.additional = [G.I_AD_CLOSE_RED, G.I_BACK_FRIENDS, RestartAssets.I_CANCEL_BATTLE,
                             GGA.I_CHAT_CLOSE_BUTTON, G.I_CLOSE_CHAT_WINDOW,
                             [G.I_MAIN_GOTO_SHIKIGAMI_RECORDS, RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA, True]]

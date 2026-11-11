@@ -422,22 +422,31 @@ class GameUi(BaseTask, GameUiAssets):
             logger.info(f'Wait appear and operate {button} on {current_page}')
             max_attempts_per_button = 3  # 每个按钮最多尝试 3 次
             attempts_list = [0] * len(button) if isinstance(button, list) else None
+            operated = False
             while not max_wait_timer.reached():
                 if timeout_timer.reached():
                     return False
                 if isinstance(button, list):
                     for idx, btn in enumerate(button):
                         click_interval = 2.5 if attempts_list[idx] >= max_attempts_per_button else 0.8
-                        attempt =  self.appear_then_operate(btn, interval=click_interval, skip_first_screenshot=False)
-                        if attempt:
+                        if self.appear_then_operate(btn, interval=click_interval, skip_first_screenshot=False):
                             attempts_list[idx] += 1
-                        # 只要第一个成功就跳出
-                        if attempt and idx == 0:
+                            operated = True
                             break
-                if self.appear_then_operate(button, interval=0.8, skip_first_screenshot=False):
+                elif self.appear_then_operate(button, interval=0.8, skip_first_screenshot=False):
+                    operated = True
+                if operated:
                     break
-            else:
+            if not operated:
                 logger.warning(f'Failed recognize {button} on {current_page}')
+                # 同一页面可能有多个入口、指向不同目标 —— 经典樱花庭院与水墨新版庭院
+                # 并存时就是这样：旧庭院要「庭院 -> 探索 -> 御魂」，新庭院底部直接有
+                # 「御魂」按钮。反向 BFS 只给一条最短路径，旧庭院就会一直卡在那个
+                # 认不出来的「御魂」按钮上（2026-11-11 09:17 实测 60 秒 Cannot goto）。
+                # 所以这里兜底：在本页找另一条**确实通往目标**的出口，点它并让上层重算路径。
+                if self._operate_alternate_link(current_page, next_page, path[-1]):
+                    self.ui_current = None
+                    return False
                 self.ui_get_current_page(skip_first_screenshot=False)
                 # 当前页面不是对应路径的页面, 则尝试下一个页面
                 if self.ui_current != current_page:
@@ -454,6 +463,36 @@ class GameUi(BaseTask, GameUiAssets):
                 # 重新获取当前页
                 self.ui_get_current_page(skip_first_screenshot=False)
         return self.ui_current == path[-1]
+
+    def _operate_alternate_link(self, page: Page, exclude: Page, destination: Page) -> bool:
+        """本页通往目标的常规入口认不出来时，改试本页其他「确实也能走到目标」的出口。
+
+        两条约束，缺一不可：
+        1. 只考虑 `dest in build_reverse_path_dict(destination)` 的出口 —— 走不到目标
+           的一个都不碰，避免在庭院上乱戳进商店/好友这类页面。
+        2. 按「dest 到目标还要几跳」从短到长试 —— 否则经典樱花庭院要回御魂时，
+           会先命中同样能绕回御魂的「町中」按钮（0.975，比探索标签还高），
+           点进去就跑到町中去了。用跳数排序后：新庭院走 1 跳的「御魂」按钮，
+           旧庭院 1 跳点不到、自然落到 2 跳的「探索」，各走各的路。
+        模板不命中就跳过，不会产生多余的点击。
+        """
+        try:
+            reachable = self.build_reverse_path_dict(destination)
+        except Exception as e:
+            logger.warning(f'备选入口计算失败: {e}')
+            return False
+        candidates = [(len(reachable[dest]), dest, btn)
+                      for dest, btn in page.links.items()
+                      if dest != exclude and dest in reachable]
+        candidates.sort(key=lambda x: x[0])
+        for hops, dest, btn in candidates:
+            buttons = btn if isinstance(btn, list) else [btn]
+            for b in buttons:
+                if self.appear_then_operate(b, interval=0.4, skip_first_screenshot=False):
+                    logger.info(f'入口 {b} 可用，改走 {dest}（{hops} 跳到 {destination}，'
+                                f'绕开认不出的 {exclude}）')
+                    return True
+        return False
 
     def run_additional(self, page: Page, interval: float = None, skip_first_screenshot: bool = True):
         """执行页面附加操作"""

@@ -67,11 +67,21 @@ C_CLICK_TO_CONTINUE = RuleClick(roi_front=(720, 645, 200, 70),
 O_PAGE_MAIN = RuleOcr(roi=(300, 545, 700, 175), area=(300, 545, 700, 175),
                       mode="Full", method="Default", keyword="",
                       name="page_main_buttons")
-# 新版底部按钮文字。都是四个字的玩法名，判别力足够，要求命中 ≥2 个才判庭院。
-# 故意不收「御魂」：御魂副本界面的标题就是这两个字，收进来等于给误判开门 ——
-# 那个界面里「御魂」单独出现，「结界突破」「地域鬼王」这些不会跟着来。
-O_PAGE_MAIN_KEYWORDS = ('觉醒材料', '结界突破', '式神委派', '秘闻副本', '地域鬼王',
-                        '妖气探索', '百鬼夜行', '六道之门', '契灵之境', '御灵')
+# 底部按钮文字，两套 UI 都要收 —— 2026-11-11 实测两台模拟器的庭院版本不一样：
+#   oas1 水墨新版：觉醒材料/御魂/结界突破/御灵/式神委派/秘闻副本/地域鬼王/妖气探索/
+#                 百鬼夜行/六道之门/契灵之境
+#   oas2 经典樱花：图鉴/珍旅居/纳物库/组队/阴阳寮/商店/花合战/好友/阴阳术/式神录
+# 要求命中 ≥2 个才判庭院，单个词不足以下结论。
+# 两套里都刻意不收容易在别处出现的词：「御魂」（御魂界面标题）、「组队」「好友」
+# （战前加成文案「额外加成：好友+10% 组队+20%」里有，收了会在战斗开始前误判回庭院，
+# 见 log/error/1793357218730）。
+O_PAGE_MAIN_KEYWORDS = (
+    # 水墨新版
+    '觉醒材料', '结界突破', '式神委派', '秘闻副本', '地域鬼王',
+    '妖气探索', '百鬼夜行', '六道之门', '契灵之境', '御灵',
+    # 经典樱花庭院（OCR 把「花合战」读成「抢合战」的情况实测存在，收作别名）
+    '图鉴', '珍旅居', '纳物库', '阴阳寮', '商店', '花合战', '抢合战', '阴阳术', '式神录',
+)
 
 # 庭院指纹阈值。2026-11-11 换 UI 后改用**底部按钮栏**做模板（I_CHECK_MAIN 已改成
 # 底部「觉醒材料 + 御魂」两枚按钮，见 tasks/GameUi/assets.py 的说明）：
@@ -746,18 +756,20 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
     def _is_page_main_by_bottombar(self) -> bool:
         """用主界面底部那排玩法按钮做模板匹配，约 8ms，不跑 OCR。
 
-        2026-11-11 游戏换成水墨风主界面，原来那枚金底竖排「探索」标签
-        （I_MAIN_GOTO_EXPLORATION）整个没有了，实测掉到 0.46，连带点击落点
-        （493,116）也点空 —— 这就是两台实例在「Page switch: page_main ->
-        page_exploration」上死循环的原因。
-        现在改用底部按钮栏（觉醒材料 + 御魂两枚按钮）：真庭院 0.955 / 0.959，
-        御魂副本界面 0.327，战斗/结算/房间界面根本没有这一排，判别力比以前更强。
+        2026-11-11 起要同时认两套 UI：
+          - 水墨新版：底部是「觉醒材料 / 御魂 / 结界突破 …」，用 I_CHECK_MAIN_NEW
+            （锚点裁的是底部按钮栏，实测新版庭院 0.9453，旧庭院 0.3154）；
+          - 经典樱花：「庭院」钢印还在，用 I_CHECK_MAIN（旧庭院 0.9328，新版 0.5998）。
+        两个都试，任一命中即算庭院。两台模拟器的游戏 UI 版本不一致，只认一套会有一台
+        永远判不出庭院 —— 那台的 battle_wait 就一直退不出来，队员永远不点接受邀请。
 
         ⚠️ 仍不能当唯一依据：庭院上弹的模态弹窗会把它盖住。所以只做快路径，
         漏判交给 _is_page_main() 的底部按钮栏 OCR 兜底。
         """
-        return self.appear(self.I_CHECK_MAIN,
-                           threshold=PAGE_MAIN_EXPLORATION_THRESHOLD)
+        for rule in (self.I_CHECK_MAIN, self.I_CHECK_MAIN_NEW):
+            if self.appear(rule, threshold=PAGE_MAIN_EXPLORATION_THRESHOLD):
+                return True
+        return False
 
     def _is_settle_layer(self) -> bool:
         """画面中央是否压着一层奖励结算（I_REWARD = 结算框里的奖励图标）。

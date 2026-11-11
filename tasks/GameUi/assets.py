@@ -41,14 +41,19 @@ class GameUiAssets:
 	I_RECORDS_CLOSE = RuleImage(roi_front=(914,143,30,30), roi_back=(914,143,30,30), threshold=0.7, method="Template matching", file="./tasks/GameUi/additional/additional_records_close.png")
 
 
-	# 庭院主界面判定
-	# 2026-11-11 游戏换了水墨风主界面：原来匹配的「庭院」钢印（807,108,76,45）已经没有了，
-	# 实测在真庭院上只有 0.59，反倒在新版御魂副本选择界面上误匹配到 0.80 —— 直接导致
-	# 页面判定错乱（page_main <-> page_exploration 死循环）。
+	# 庭院主界面判定（经典樱花庭院）
+	# 2026-11-11 发现两台模拟器的庭院 UI 并不一致：oas1 是新的水墨风主界面，
+	# oas2 还是经典樱花庭院（底部图鉴/珍旅居/纳物库那一排）。所以判定必须**双锚点**，
+	# 见下面的 I_CHECK_MAIN_NEW 与 page.py 里的 page_main 定义。
+	I_CHECK_MAIN = RuleImage(roi_front=(807,108,76,45), roi_back=(49,98,1033,61), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_check_main.png")
+	# 庭院主界面判定（2026-11-11 水墨风新版）
+	# 原锚点在新版庭院上只剩 0.5998，认不出来；反倒在御魂副本界面上误匹配到 0.80，
+	# 导致 page_main <-> page_exploration 死循环。
 	# 改锚点为**底部玩法按钮栏**（觉醒材料 + 御魂两枚按钮，y 640~712）：
-	#   真庭院 0.955 / 0.959（两台各测一次），御魂副本界面 0.327、战斗/结算界面无此栏。
-	# 之所以从 y=640 开始而不是整个按钮：上方图标区有落樱和光效动画，跨帧差异大。
-	I_CHECK_MAIN = RuleImage(roi_front=(30,640,230,72), roi_back=(0,600,1280,120), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_check_main.png")
+	#   新版庭院 0.9453，经典樱花庭院 0.3154、御魂副本界面 0.327，判别很干净。
+	# 从 y=640 开始而不是整个按钮：上方图标区有落樱和光效动画，跨帧灰度差可达 100+，
+	# 而 y=640/672 两行的跨帧差 <0.3（stable_region_scan.py 实测）。
+	I_CHECK_MAIN_NEW = RuleImage(roi_front=(30,640,230,72), roi_back=(0,600,1280,120), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_check_main_new.png")
 	# 主界面 -> 御魂副本选择（底部「御魂」按钮）
 	# 新版把原来「庭院 -> 探索 -> 御魂」的两跳压成了一跳：底部按钮直接进副本选择，
 	# 探索地图那一层已经不存在了（I_MAIN_GOTO_EXPLORATION 实测掉到 0.46，点击位置落空）。
