@@ -42,27 +42,28 @@ class GameUiAssets:
 
 
 	# 庭院主界面判定（经典樱花庭院）
-	# 2026-11-11 发现两台模拟器的庭院 UI 并不一致：oas1 是新的水墨风主界面，
-	# oas2 还是经典樱花庭院（底部图鉴/珍旅居/纳物库那一排）。所以判定必须**双锚点**，
-	# 见下面的 I_CHECK_MAIN_NEW 与 page.py 里的 page_main 定义。
+	# 左上角「庭院」钢印。**这是庭院的唯一锚点** —— 2026-11-11 12:05 更正：
+	# 之前以为「I_CHECK_MAIN_NEW = 新版庭院、旧云纹 = 旧庭院」是错的，实测
+	# I_CHECK_MAIN_NEW 命中的其实是**新版探索页**（左上角有返回箭头、底部是玩法按钮栏）。
+	# 判别力：旧樱花庭院 0.93 / 新版探索页 0.42 / 御魂副本界面 0.42。
 	I_CHECK_MAIN = RuleImage(roi_front=(807,108,76,45), roi_back=(49,98,1033,61), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_check_main.png")
-	# 庭院主界面判定（2026-11-11 水墨风新版）
-	# 原锚点在新版庭院上只剩 0.5998，认不出来；反倒在御魂副本界面上误匹配到 0.80，
-	# 导致 page_main <-> page_exploration 死循环。
-	# 改锚点为**底部玩法按钮栏**（觉醒材料 + 御魂两枚按钮，y 640~712）：
-	#   新版庭院 0.9453，经典樱花庭院 0.3154、御魂副本界面 0.327，判别很干净。
+	# 探索页判定（2026-11-11 新版）
+	# 裁的是**底部玩法按钮栏**（觉醒材料 + 御魂两枚按钮，y 640~712），名字里的 MAIN 是历史遗留。
+	# 它属于 page_exploration，不是 page_main —— 挂错会把探索页认成庭院，
+	# 导致 ui_goto(page_main) 在探索页上判定「已到达」，加成/返回全在探索页上瞎点。
+	# 判别力：新版探索页 0.95~1.00，旧樱花庭院 0.24~0.32，御魂副本界面 0.26，互不串台。
 	# 从 y=640 开始而不是整个按钮：上方图标区有落樱和光效动画，跨帧灰度差可达 100+，
 	# 而 y=640/672 两行的跨帧差 <0.3（stable_region_scan.py 实测）。
 	I_CHECK_MAIN_NEW = RuleImage(roi_front=(30,640,230,72), roi_back=(0,600,1280,120), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_check_main_new.png")
-	# 主界面 -> 御魂副本选择（底部「御魂」按钮）
-	# 新版把原来「庭院 -> 探索 -> 御魂」的两跳压成了一跳：底部按钮直接进副本选择，
-	# 探索地图那一层已经不存在了（I_MAIN_GOTO_EXPLORATION 实测掉到 0.46，点击位置落空）。
-	# 实测「御魂」按钮：两台庭院 0.928 / 0.930，御魂界面自身 0.387。
+	# 探索页 -> 御魂副本选择（新版探索页底部的「御魂」按钮）
+	# 名字是历史遗留：它在**探索页**底部，不在庭院。旧探索页那个竖排「御魂」标签
+	# （I_EXPLORATION_GOTO_SOUL_ZONE）至今仍在用，两条并列挂在 page_exploration 上。
+	# 实测「御魂」按钮：新版探索页 0.93~1.00，旧樱花庭院 0.20，御魂界面自身 0.20。
 	I_MAIN_GOTO_SOUL_ZONES = RuleImage(roi_front=(140,610,80,98), roi_back=(0,600,1280,120), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_main_goto_soul_zones.png")
-	# 主界面 -> 结界突破（底部「结界突破」按钮的文字）
+	# 探索页 -> 结界突破（新版探索页底部「结界突破」按钮的文字）
 	# 裁的是文字而不是整块图标：这块图标上压着「地域鬼王」的竖排小标签，两台实例
-	# 之间那部分会差出 0.09（0.928 vs 0.839），而纯文字区两台都是 0.9915。
-	# 点击落点落在文字中心 (277,689)，仍在按钮热区内。
+	# 之间那部分会差出 0.09（0.928 vs 0.839），而纯文字区稳定 0.99。
+	# 点击落点落在文字中心 (277,689)，仍在按钮热区内。实测旧樱花庭院只有 0.32。
 	I_MAIN_GOTO_REALM_RAID = RuleImage(roi_front=(240,670,74,38), roi_back=(0,600,1280,120), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_main_goto_realm_raid.png")
 	# 庭院卷轴关闭标识 
 	I_MAIN_SCROLL_CLOSE = RuleImage(roi_front=(1181,634,28,39), roi_back=(1162,595,77,112), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_main_scroll_close.png")

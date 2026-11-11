@@ -53,11 +53,13 @@ class Page:
 
 #登录login
 page_login = Page(G.I_CHECK_LOGIN_FORM)
-# Main Home 主页
-# 双锚点：经典樱花庭院（I_CHECK_MAIN）与 2026-11-11 水墨风新版（I_CHECK_MAIN_NEW）。
-# 两台模拟器的庭院 UI 版本不一样，必须都能认。Page.check_button 支持 list，
-# ui_page_appear() 会逐个尝试，任一命中即算该页。
-page_main = Page([G.I_CHECK_MAIN, G.I_CHECK_MAIN_NEW])
+# Main Home 主页（经典樱花庭院）
+# ⚠️ 2026-11-11 12:05 更正：I_CHECK_MAIN_NEW 命中的不是「新版庭院」，而是
+# **新版探索页**（左上角有返回箭头、底部是「觉醒材料/御魂/结界突破/…」按钮栏、
+# 还有「妖气探索」这种探索页专属入口）。它挂在 page_main 上会让探索页被当成庭院，
+# 于是 ui_goto(page_main) 在探索页上直接判定「已到达」，加成/返回全在探索页上瞎点。
+# 庭院只有一个锚点：左上角「庭院」钢印（旧版 0.93，探索页 0.42）。
+page_main = Page(G.I_CHECK_MAIN)
 page_main.additional = [G.I_AD_CLOSE_RED, G.I_BACK_FRIENDS, RestartAssets.I_CANCEL_BATTLE,
                             GGA.I_CHAT_CLOSE_BUTTON, G.I_CLOSE_CHAT_WINDOW,
                             [G.I_MAIN_GOTO_SHIKIGAMI_RECORDS, RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA, True]]
@@ -66,7 +68,10 @@ page_summon = Page(G.I_CHECK_SUMMON)
 page_summon.link(button=G.I_SUMMON_GOTO_MAIN, destination=page_main)
 page_main.link(button=G.I_MAIN_GOTO_SUMMON, destination=page_summon)
 # 探索exploration
-page_exploration = Page(G.I_CHECK_EXPLORATION)
+# 双锚点：旧版探索地图（左上角「探索」标题 I_CHECK_EXPLORATION，新版页只剩 0.19）
+# 与 2026-11-11 新版探索页（底部按钮栏 I_CHECK_MAIN_NEW，旧探索页 0.24、庭院 0.32）。
+# 两者互斥且都很干净，任何一套 UI 都认得出来。
+page_exploration = Page([G.I_CHECK_EXPLORATION, G.I_CHECK_MAIN_NEW])
 page_exploration.link(button=G.I_BACK_YOLLOW, destination=page_main)
 page_main.link(button=G.I_MAIN_GOTO_EXPLORATION, destination=page_exploration)
 # 町中town
@@ -80,20 +85,24 @@ page_awake_zones = Page(G.I_CHECK_AWAKE)
 page_awake_zones.link(button=G.I_BACK_YOLLOW, destination=page_exploration)
 page_exploration.link(button=G.I_EXPLORATION_GOTO_AWAKE_ZONE, destination=page_awake_zones)
 # 御魂 soul zones
-# 2026-11-11 新版 UI 把「庭院 -> 探索 -> 御魂」压成了「庭院 -> 御魂」：
-# 底部按钮栏直接就是各副本入口，探索地图那一层（连同它的「御魂」竖排标签）没有了。
-# 所以这里直接和庭院互连，返回边也从 page_exploration 改回 page_main，
-# 否则打完一轮要回庭院时会走「御魂 -> 探索 -> 庭院」，而探索页已经认不出来，直接卡死。
+# 新版探索页把「御魂」从地图上的竖排标签改成了底部按钮栏的一枚按钮，跳转层数没变：
+#   庭院 -> 探索页 -> 御魂副本选择
+# 所以入口挂在 page_exploration 上，两条锚点并列（都实测命中 0.99）：
+#   - 旧探索页的竖排「御魂」标签 I_EXPLORATION_GOTO_SOUL_ZONE
+#   - 新探索页底部的「御魂」按钮 I_MAIN_GOTO_SOUL_ZONES（名字是历史遗留，实际在探索页）
+# 返回边也必须回 page_exploration（御魂界面的返回键回的是探索页，不是庭院）。
 page_soul_zones = Page(G.I_CHECK_SOUL_ZONES)
-page_soul_zones.link(button=G.I_BACK_YOLLOW, destination=page_main)
-page_main.link(button=G.I_MAIN_GOTO_SOUL_ZONES, destination=page_soul_zones)
-page_exploration.link(button=G.I_EXPLORATION_GOTO_SOUL_ZONE, destination=page_soul_zones)
+page_soul_zones.link(button=G.I_BACK_YOLLOW, destination=page_exploration)
+page_exploration.link(
+    button=[G.I_MAIN_GOTO_SOUL_ZONES, G.I_EXPLORATION_GOTO_SOUL_ZONE],
+    destination=page_soul_zones)
 # 结界突破 realm raid
-# 同御魂：新版底部按钮直接进，返回边也直接回庭院（探索页已经认不出来了）
+# 同御魂：新版探索页底部按钮直接进，入口仍是探索页，返回也回探索页。
 page_realm_raid = Page(G.I_CHECK_REALM_RAID)
 page_realm_raid.link(button=G.I_REALM_RAID_GOTO_EXPLORATION, destination=page_exploration)
-page_main.link(button=G.I_MAIN_GOTO_REALM_RAID, destination=page_realm_raid)
-page_exploration.link(button=G.I_EXPLORATION_GOTO_REALM_RAID, destination=page_realm_raid)
+page_exploration.link(
+    button=[G.I_MAIN_GOTO_REALM_RAID, G.I_EXPLORATION_GOTO_REALM_RAID],
+    destination=page_realm_raid)
 # 寮结界突破右上角 kekkai toppa
 page_kekkai_toppa = Page(G.I_KEKKAI_TOPPA)
 page_kekkai_toppa.link(button=G.I_REALM_RAID_GOTO_EXPLORATION, destination=page_exploration)
