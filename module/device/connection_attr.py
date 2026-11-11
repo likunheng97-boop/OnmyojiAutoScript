@@ -1,7 +1,10 @@
 # This Python file uses the following encoding: utf-8
 # copy from alas
+import contextlib
+import json
 import os
 import re
+import subprocess
 
 import adbutils
 import uiautomator2 as u2
@@ -67,6 +70,8 @@ class ConnectionAttr:
         # self.serial = str(self.config.Emulator_Serial)
         self.serial = str(self.config.script.device.serial)
         self.serial_check()
+        # MuMu 重启后 adb 端口会漂移，这里按实例号重新解析一次（见方法注释）
+        self.resolve_serial_dynamic()
         self.config.DEVICE_OVER_HTTP = self.is_over_http
 
     def serial_check(self):
@@ -102,6 +107,118 @@ class ConnectionAttr:
                     f'ControlMethod can only use ["ADB", "uiautomator2", "minitouch"]'
                 )
                 raise RequestHumanTakeover
+
+    # ------------------------------------------------------------------
+    # MuMu 动态 adb 端口
+    # ------------------------------------------------------------------
+    @cached_property
+    def is_mumu_12(self) -> bool:
+        return str(getattr(self.config.script.device, 'emulatorinfo_type', '') or '') == 'MuMuPlayer12'
+
+    def resolve_serial_dynamic(self):
+        """
+        MuMu 每次重启后 adb 端口会漂移：同一实例会在 16384 <-> 16385、
+        16416 <-> 16417 之间来回跳（实测 2026-11-07 与 2026-11-11 各跳一次）。
+        配置里写死 serial 的结果就是「重启后 OAS 连不上设备、oasx 卡在 UIAUTOMATOR2 INIT」。
+
+        这里以 MuMuManager 报的 adb_port 为准，每次脚本启动重新解析一遍：
+            emulatorinfo_name = "MuMuPlayer-15.0-1"  ->  实例号 1
+            MuMuManager info -v 1                    ->  adb_host_ip / adb_port
+        解析出的 ip:port 会写回配置（ConfigModel 赋值自动保存），下次界面显示的就是对的。
+        任何一步失败都保持原 serial，不阻断原有流程。
+        """
+        if not self.is_mumu_12:
+            return
+        device = self.config.script.device
+        name = str(getattr(device, 'emulatorinfo_name', '') or '')
+        m = re.search(r'-(\d+)\s*$', name)
+        if not m:
+            logger.warning(f'无法从 emulatorinfo_name 解析实例号：{name!r}，跳过 serial 自动解析')
+            return
+        index = int(m.group(1))
+
+        mgr = self.find_mumu_manager(str(getattr(device, 'emulatorinfo_path', '') or ''))
+        if not mgr:
+            logger.warning('找不到 MuMuManager.exe，跳过 serial 自动解析')
+            return
+
+        info = self.read_mumu_info(mgr, index)
+        if not info:
+            return
+        ip = str(info.get('adb_host_ip') or '127.0.0.1')
+        try:
+            port = int(info.get('adb_port'))
+        except (TypeError, ValueError):
+            logger.warning(f'MuMu 实例 {index} 的 adb_port 无效：{info.get("adb_port")!r}，跳过自动解析')
+            return
+        if port <= 0:
+            logger.warning(f'MuMu 实例 {index} 的 adb_port = {port}，可能未启动，跳过自动解析')
+            return
+
+        new = f'{ip}:{port}'
+        logger.attr('MuMuIndex', index)
+        logger.attr('MuMuAdbPort', new)
+        if new == self.serial:
+            logger.info(f'Serial 无需变更：{new}')
+        else:
+            logger.warning(f'Serial 自动修正：{self.serial} -> {new}（MuMu 实例 {index} 当前 adb 端口）')
+            self.serial = new
+            with contextlib.suppress(Exception):
+                # 写回配置，ConfigModel.__setattr__ 会自动 save
+                device.serial = new
+
+        # adb 端口换了的话设备表里没有这条连接，先 adb connect 一次；
+        # 失败不抛，交给后续 u2 初始化报错（那里有更完整的提示）
+        try:
+            result = self.adb_client.connect(new, timeout=10)
+            logger.info(f'adb connect {new} -> {result}')
+        except Exception as e:
+            logger.warning(f'adb connect {new} 失败：{type(e).__name__}: {e}')
+
+    @staticmethod
+    def find_mumu_manager(emulatorinfo_path: str) -> str:
+        """从 MuMuNxMain.exe 推出同目录的 MuMuManager.exe，失败再试常见安装路径"""
+        cands = []
+        if emulatorinfo_path:
+            folder = os.path.dirname(emulatorinfo_path.replace('\\', '/'))
+            if folder:
+                cands.append(os.path.join(folder, 'MuMuManager.exe'))
+        cands.append('E:/app/mumu/MuMuPlayer/nx_main/MuMuManager.exe')
+        for path in cands:
+            if path and os.path.isfile(path):
+                return path.replace('\\', '/')
+        return ''
+
+    @staticmethod
+    def read_mumu_info(mgr: str, index: int) -> dict:
+        """执行 MuMuManager info -v <index> 并解析 JSON，失败返回 {}"""
+        try:
+            p = subprocess.run(
+                [mgr, 'info', '-v', str(index)],
+                capture_output=True, timeout=15,
+                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+            )
+        except Exception as e:
+            logger.warning(f'调用 MuMuManager 失败：{type(e).__name__}: {e}')
+            return {}
+        text = (p.stdout or b'').decode('utf-8', 'replace')
+        start, end = text.find('{'), text.rfind('}')
+        if start < 0 or end <= start:
+            logger.warning(f'MuMuManager 输出无法解析：{text[:120]!r}')
+            return {}
+        try:
+            info = json.loads(text[start:end + 1])
+        except json.JSONDecodeError as e:
+            logger.warning(f'MuMuManager 输出 JSON 解析失败：{e}')
+            return {}
+        # 实例不存在时返回 {"errcode": -200, "errmsg": "player index not found"}
+        if info.get('errcode') not in (None, 0):
+            logger.warning(f'MuMuManager 报错：{info.get("errmsg") or info.get("errcode")}（实例 {index}）')
+            return {}
+        if str(info.get('index', '')) != str(index):
+            logger.warning(f'MuMuManager 返回实例号不匹配：{info.get("index")!r} != {index}')
+            return {}
+        return info
 
     @cached_property
     def is_bluestacks4_hyperv(self):
