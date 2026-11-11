@@ -41,9 +41,19 @@ class GameUiAssets:
 	I_RECORDS_CLOSE = RuleImage(roi_front=(914,143,30,30), roi_back=(914,143,30,30), threshold=0.7, method="Template matching", file="./tasks/GameUi/additional/additional_records_close.png")
 
 
-	# Image Rule Assets
-	# description 
-	I_CHECK_MAIN = RuleImage(roi_front=(807,108,76,45), roi_back=(49,98,1033,61), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_check_main.png")
+	# 庭院主界面判定
+	# 2026-11-11 游戏换了水墨风主界面：原来匹配的「庭院」钢印（807,108,76,45）已经没有了，
+	# 实测在真庭院上只有 0.59，反倒在新版御魂副本选择界面上误匹配到 0.80 —— 直接导致
+	# 页面判定错乱（page_main <-> page_exploration 死循环）。
+	# 改锚点为**底部玩法按钮栏**（觉醒材料 + 御魂两枚按钮，y 640~712）：
+	#   真庭院 0.955 / 0.959（两台各测一次），御魂副本界面 0.327、战斗/结算界面无此栏。
+	# 之所以从 y=640 开始而不是整个按钮：上方图标区有落樱和光效动画，跨帧差异大。
+	I_CHECK_MAIN = RuleImage(roi_front=(30,640,230,72), roi_back=(0,600,1280,120), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_check_main.png")
+	# 主界面 -> 御魂副本选择（底部「御魂」按钮）
+	# 新版把原来「庭院 -> 探索 -> 御魂」的两跳压成了一跳：底部按钮直接进副本选择，
+	# 探索地图那一层已经不存在了（I_MAIN_GOTO_EXPLORATION 实测掉到 0.46，点击位置落空）。
+	# 实测「御魂」按钮：两台庭院 0.928 / 0.930，御魂界面自身 0.387。
+	I_MAIN_GOTO_SOUL_ZONES = RuleImage(roi_front=(140,610,80,98), roi_back=(0,600,1280,120), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_main_goto_soul_zones.png")
 	# 庭院卷轴关闭标识 
 	I_MAIN_SCROLL_CLOSE = RuleImage(roi_front=(1181,634,28,39), roi_back=(1162,595,77,112), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_main_scroll_close.png")
 	# description 

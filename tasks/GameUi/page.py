@@ -77,8 +77,13 @@ page_awake_zones = Page(G.I_CHECK_AWAKE)
 page_awake_zones.link(button=G.I_BACK_YOLLOW, destination=page_exploration)
 page_exploration.link(button=G.I_EXPLORATION_GOTO_AWAKE_ZONE, destination=page_awake_zones)
 # 御魂 soul zones
+# 2026-11-11 新版 UI 把「庭院 -> 探索 -> 御魂」压成了「庭院 -> 御魂」：
+# 底部按钮栏直接就是各副本入口，探索地图那一层（连同它的「御魂」竖排标签）没有了。
+# 所以这里直接和庭院互连，返回边也从 page_exploration 改回 page_main，
+# 否则打完一轮要回庭院时会走「御魂 -> 探索 -> 庭院」，而探索页已经认不出来，直接卡死。
 page_soul_zones = Page(G.I_CHECK_SOUL_ZONES)
-page_soul_zones.link(button=G.I_BACK_YOLLOW, destination=page_exploration)
+page_soul_zones.link(button=G.I_BACK_YOLLOW, destination=page_main)
+page_main.link(button=G.I_MAIN_GOTO_SOUL_ZONES, destination=page_soul_zones)
 page_exploration.link(button=G.I_EXPLORATION_GOTO_SOUL_ZONE, destination=page_soul_zones)
 # 结界突破 realm raid
 page_realm_raid = Page(G.I_CHECK_REALM_RAID)

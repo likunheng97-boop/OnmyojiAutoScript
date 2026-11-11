@@ -67,18 +67,18 @@ C_CLICK_TO_CONTINUE = RuleClick(roi_front=(720, 645, 200, 70),
 O_PAGE_MAIN = RuleOcr(roi=(300, 545, 700, 175), area=(300, 545, 700, 175),
                       mode="Full", method="Default", keyword="",
                       name="page_main_buttons")
-# 底部按钮文字。故意不收单字「组」：它在别处（组队面板、组成）太常见，
-# 收益不值这个风险。OCR 把「花合战」读成「抢合战」的情况实测存在，收作别名。
-O_PAGE_MAIN_KEYWORDS = ('图鉴', '珍旅居', '纳物库', '组队', '阴阳寮', '商店',
-                        '花合战', '抢合战', '好友', '阴阳术', '式神录')
+# 新版底部按钮文字。都是四个字的玩法名，判别力足够，要求命中 ≥2 个才判庭院。
+# 故意不收「御魂」：御魂副本界面的标题就是这两个字，收进来等于给误判开门 ——
+# 那个界面里「御魂」单独出现，「结界突破」「地域鬼王」这些不会跟着来。
+O_PAGE_MAIN_KEYWORDS = ('觉醒材料', '结界突破', '式神委派', '秘闻副本', '地域鬼王',
+                        '妖气探索', '百鬼夜行', '六道之门', '契灵之境', '御灵')
 
-# 庭院「探索」标签（GameUiAssets.I_MAIN_GOTO_EXPLORATION，45×75 金底竖排黑字）
-# 的判定阈值。模板自带 0.8 太严：夜间樱花庭院实测只有 0.6874（模板裁的是白天寺庙
-# 场景的配色），会被漏判。而 log/error 下 55 张历史截图里，非庭院画面的最高分只有
-# 0.4426（战斗中的「加成」标签，形似金底竖排），所以 0.60 是「覆盖真实庭院」与
-# 「零误判」之间的中点。阈值取低的代价只是漏判，而漏判有底部按钮栏 OCR 兜底，
-# 方向是安全的；反过来取高才会真的把队员卡死在 battle_wait 里。
-PAGE_MAIN_EXPLORATION_THRESHOLD = 0.60
+# 庭院指纹阈值。2026-11-11 换 UI 后改用**底部按钮栏**做模板（I_CHECK_MAIN 已改成
+# 底部「觉醒材料 + 御魂」两枚按钮，见 tasks/GameUi/assets.py 的说明）：
+#   真庭院 0.955 / 0.959（两台各测一次），御魂副本界面 0.327。
+# 0.8 落在中间，比旧的「探索竖排标签」可靠得多 —— 那个标签在新 UI 里只剩 0.46，
+# 而且它的点击落点（493,116 附近）现在什么都没有，点一次空一次。
+PAGE_MAIN_EXPLORATION_THRESHOLD = 0.80
 
 
 class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi, SwitchSoul, OrochiAssets, TrueOrochiAssets):
@@ -374,7 +374,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             # 如果没有进入房间那就不需要后面的邀请
             if not self.is_in_room():
                 # 房间丢失判定：庭院（模板快判 + OCR 兜底）、探索界面、组队界面
-                room_lost = (self._is_page_main_by_exploration()
+                room_lost = (self._is_page_main_by_bottombar()
                              or self.is_room_dead()
                              or self._is_page_main())
                 if room_lost:
@@ -743,17 +743,20 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                 return kw
         return ''
 
-    def _is_page_main_by_exploration(self) -> bool:
-        """用庭院那个竖排「探索」标签做模板匹配，约 8ms，不跑 OCR。
+    def _is_page_main_by_bottombar(self) -> bool:
+        """用主界面底部那排玩法按钮做模板匹配，约 8ms，不跑 OCR。
 
-        这个标签是庭院主界面自带的固定功能入口（金底黑字，45×75），战斗、结算、
-        房间、加成展示画面上都没有，所以拿它当庭院指纹比 OCR 又快又准。
+        2026-11-11 游戏换成水墨风主界面，原来那枚金底竖排「探索」标签
+        （I_MAIN_GOTO_EXPLORATION）整个没有了，实测掉到 0.46，连带点击落点
+        （493,116）也点空 —— 这就是两台实例在「Page switch: page_main ->
+        page_exploration」上死循环的原因。
+        现在改用底部按钮栏（觉醒材料 + 御魂两枚按钮）：真庭院 0.955 / 0.959，
+        御魂副本界面 0.327，战斗/结算/房间界面根本没有这一排，判别力比以前更强。
 
-        ⚠️ 但不能当唯一依据：庭院上弹的「关联手机」等模态弹窗会把它盖住，
-        log/error/1793300795263 实测被压到 0.4555，直接漏判。所以只做快路径，
+        ⚠️ 仍不能当唯一依据：庭院上弹的模态弹窗会把它盖住。所以只做快路径，
         漏判交给 _is_page_main() 的底部按钮栏 OCR 兜底。
         """
-        return self.appear(self.I_MAIN_GOTO_EXPLORATION,
+        return self.appear(self.I_CHECK_MAIN,
                            threshold=PAGE_MAIN_EXPLORATION_THRESHOLD)
 
     def _is_settle_layer(self) -> bool:
@@ -819,7 +822,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         # 不算「干净的庭院」——让调用方走 _clear_settle_layer() 去点它。
         if self._is_settle_layer():
             return False
-        if self._is_page_main_by_exploration():
+        if self._is_page_main_by_bottombar():
             return True
         try:
             # 同上：每 5 秒一次的兜底判定，关掉逐次 OCR 原文（命中时下面会打 [PAGE_MAIN]）
@@ -1092,7 +1095,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                 # 先花 8ms 用「探索」标签确认是不是已经回庭院了（纯模板匹配，不跑 OCR）。
                 # 庭院是最常见的卡死现场，命中就直接交还控制权，省掉下面两次 OCR
                 # （_settle_advance_keyword + _is_page_main 合计 0.36s/轮）。
-                if self._is_page_main_by_exploration():
+                if self._is_page_main_by_bottombar():
                     logger.warning('Battle is over, game already back to main page '
                                    '(team dissolved by leader?), give up this round '
                                    'and let the member loop handle invitations')
