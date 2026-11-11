@@ -1,6 +1,5 @@
 # This Python file uses the following encoding: utf-8
 # copy from alas
-import contextlib
 import json
 import os
 import re
@@ -163,9 +162,13 @@ class ConnectionAttr:
         else:
             logger.warning(f'Serial 自动修正：{self.serial} -> {new}（MuMu 实例 {index} 当前 adb 端口）')
             self.serial = new
-            with contextlib.suppress(Exception):
-                # 写回配置，ConfigModel.__setattr__ 会自动 save
+            try:
                 device.serial = new
+                # 注意：ConfigModel 只在顶层字段赋值时自动 save，
+                # script.device 是嵌套模型，改完必须显式落盘，否则文件里还是旧端口
+                self.config.save()
+            except Exception as e:
+                logger.warning(f'写回配置失败（本次运行不受影响）：{type(e).__name__}: {e}')
 
         # adb 端口换了的话设备表里没有这条连接，先 adb connect 一次；
         # 失败不抛，交给后续 u2 初始化报错（那里有更完整的提示）
