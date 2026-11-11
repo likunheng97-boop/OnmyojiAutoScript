@@ -54,6 +54,11 @@ class GameUiAssets:
 	# 探索地图那一层已经不存在了（I_MAIN_GOTO_EXPLORATION 实测掉到 0.46，点击位置落空）。
 	# 实测「御魂」按钮：两台庭院 0.928 / 0.930，御魂界面自身 0.387。
 	I_MAIN_GOTO_SOUL_ZONES = RuleImage(roi_front=(140,610,80,98), roi_back=(0,600,1280,120), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_main_goto_soul_zones.png")
+	# 主界面 -> 结界突破（底部「结界突破」按钮的文字）
+	# 裁的是文字而不是整块图标：这块图标上压着「地域鬼王」的竖排小标签，两台实例
+	# 之间那部分会差出 0.09（0.928 vs 0.839），而纯文字区两台都是 0.9915。
+	# 点击落点落在文字中心 (277,689)，仍在按钮热区内。
+	I_MAIN_GOTO_REALM_RAID = RuleImage(roi_front=(240,670,74,38), roi_back=(0,600,1280,120), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_main_goto_realm_raid.png")
 	# 庭院卷轴关闭标识 
 	I_MAIN_SCROLL_CLOSE = RuleImage(roi_front=(1181,634,28,39), roi_back=(1162,595,77,112), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_main_scroll_close.png")
 	# description 

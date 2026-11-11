@@ -86,8 +86,10 @@ page_soul_zones.link(button=G.I_BACK_YOLLOW, destination=page_main)
 page_main.link(button=G.I_MAIN_GOTO_SOUL_ZONES, destination=page_soul_zones)
 page_exploration.link(button=G.I_EXPLORATION_GOTO_SOUL_ZONE, destination=page_soul_zones)
 # 结界突破 realm raid
+# 同御魂：新版底部按钮直接进，返回边也直接回庭院（探索页已经认不出来了）
 page_realm_raid = Page(G.I_CHECK_REALM_RAID)
 page_realm_raid.link(button=G.I_REALM_RAID_GOTO_EXPLORATION, destination=page_exploration)
+page_main.link(button=G.I_MAIN_GOTO_REALM_RAID, destination=page_realm_raid)
 page_exploration.link(button=G.I_EXPLORATION_GOTO_REALM_RAID, destination=page_realm_raid)
 # 寮结界突破右上角 kekkai toppa
 page_kekkai_toppa = Page(G.I_KEKKAI_TOPPA)
