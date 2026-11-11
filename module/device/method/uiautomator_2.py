@@ -1,3 +1,4 @@
+import time
 import typing as t
 import numpy as np
 import cv2
@@ -113,6 +114,43 @@ class ShellBackgroundResponse:
 
 
 class Uiautomator2(Connection):
+    # 上次体检 u2 服务的时间戳（见 ensure_u2_alive）
+    _u2_probe_at = 0.0
+
+    def ensure_u2_alive(self):
+        """每 3 分钟顺手体检一次 u2 服务，挂掉就地拉起。
+
+        设备里的 com.github.uiautomator 死了之后，``u2.click()`` 既不抛异常
+        也不返回错误，日志照打 ``Click (x, y)``，屏幕上什么都不发生。
+        所以只能在点击通道的入口定期探一次 —— 探的是 atx 的
+        ``/screenshot/0``（它也走这个服务），失败就重启服务并丢弃旧连接。
+
+        正常情况每 3 分钟多花 0.3 秒；故障时最多多等十几秒，之后自愈。
+        """
+        now = time.time()
+        if now - Uiautomator2._u2_probe_at < 180:
+            return
+        Uiautomator2._u2_probe_at = now
+        try:
+            from module.base.decorator import del_cached_property
+            from module.device.u2_health import (
+                adb_forward_port, ensure_u2_service, probe_u2_service,
+            )
+
+            port = adb_forward_port(self.adb_binary, self.serial)
+            if not port:
+                return
+            ok, detail = probe_u2_service(port)
+            if ok:
+                return
+            logger.warning(f'u2 服务无响应（{detail}），尝试恢复')
+            if ensure_u2_service(self.adb_binary, self.serial):
+                # 旧连接绑在死掉的服务上，丢掉重新连
+                del_cached_property(self, 'u2')
+                logger.info('u2 服务已恢复，连接已重建')
+        except Exception as e:
+            logger.warning(f'u2 服务体检异常，忽略: {type(e).__name__}: {e}')
+
     @retry
     def screenshot_uiautomator2(self):
         image = self.u2.screenshot(format='raw')
@@ -132,6 +170,7 @@ class Uiautomator2(Connection):
 
     @retry
     def click_uiautomator2(self, x, y):
+        self.ensure_u2_alive()
         self.u2.click(x, y)
 
     @retry

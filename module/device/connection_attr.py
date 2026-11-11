@@ -267,6 +267,16 @@ class ConnectionAttr:
 
     @cached_property
     def u2(self) -> u2.Device:
+        # 连之前先确认设备里的 u2 服务活着。
+        # 服务死了的时候 connect() 与 click() 都不会报错，只是点了没反应
+        # （日志照打 Click），排查成本极高，见 module/device/u2_health.py。
+        try:
+            from module.device.u2_health import ensure_u2_service
+
+            ensure_u2_service(self.adb_binary, self.serial)
+        except Exception as e:
+            logger.warning(f'u2 服务体检异常，继续连接: {type(e).__name__}: {e}')
+
         if self.is_over_http:
             # Using uiautomator2_http
             device = u2.connect(self.serial)
