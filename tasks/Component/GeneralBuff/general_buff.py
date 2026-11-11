@@ -11,6 +11,7 @@ from module.atom.ocr import RuleOcr
 from module.atom.image import RuleImage
 from tasks.base_task import BaseTask
 from module.logger import logger
+from module.base.timer import Timer
 
 
 class GeneralBuff(BaseTask, GeneralBuffAssets):
@@ -18,15 +19,26 @@ class GeneralBuff(BaseTask, GeneralBuffAssets):
     def open_buff(self):
         """
         打开buff的总界面
-        :return:
+        :return: 打开成功 True，超时放弃 False（调用方已有 soul_on() 兜底）
         """
         logger.info('Open buff')
+        # 原来这是个没有出口的 while：只要 I_BUFF_1 认不出来就既不点击也不退出，
+        # 一分钟零点击后 device 判 GameStuckError（detect_record 是空集），
+        # 强杀游戏重启，任务连续失败三次直接退出。2026-11-11 09:29 换新版 UI 的
+        # oas1 就是这么挂的。加超时 + 两套 UI 的入口都试一遍。
+        timeout = Timer(25).start()
         while 1:
             self.screenshot()
             if self.appear(self.I_CLOUD):
                 break
+            # 经典樱花庭院是左上角那个小图标；2026-11 水墨新版是偏左的竖排「加成」木牌
             if self.appear_then_click(self.I_BUFF_1, interval=2):
                 continue
+            if self.appear_then_click(self.I_BUFF_1_NEW, interval=2):
+                continue
+            if timeout.reached():
+                logger.warning('加成面板 25 秒没打开（两套入口都没认出来），跳过加成继续刷本')
+                return False
 
         check_image = self.I_AWAKE
         while 1:
@@ -35,6 +47,7 @@ class GeneralBuff(BaseTask, GeneralBuffAssets):
                 break
 
             self.swipe(self.S_BUFF_UP, interval=2)
+        return True
 
     def close_buff(self):
         """
@@ -42,12 +55,19 @@ class GeneralBuff(BaseTask, GeneralBuffAssets):
         :return:
         """
         logger.info('Close buff')
+        # 同样两套 UI 都试：面板开着却关不掉的话，run() 里会一直卡在这里空转
+        timeout = Timer(20).start()
         while 1:
             self.screenshot()
             if not self.appear(self.I_CLOUD):
                 break
             if self.appear_then_click(self.I_BUFF_1, interval=2):
                 continue
+            if self.appear_then_click(self.I_BUFF_1_NEW, interval=2):
+                continue
+            if timeout.reached():
+                logger.warning('加成面板 20 秒关不掉，先继续（下一次进庭院会重新判断）')
+                return
 
     def get_area(self, buff: RuleOcr) -> tuple:
         """

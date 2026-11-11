@@ -13,6 +13,12 @@ class GeneralBuffAssets:
 	# Image Rule Assets
 	# 庭院左上角的加成 
 	I_BUFF_1 = RuleImage(roi_front=(363,32,32,46), roi_back=(344,14,128,76), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralBuff/gb/gb_buff_1.png")
+	# 庭院左上角的加成（2026-11 水墨风新版）
+	# 新版左上角不是那个 32×46 的小图标，而是偏左的竖排「加成」木牌（54×64）。
+	# 实测新版 0.9320~1.0，经典樱花庭院 0.3750，两边都能分开。
+	# 不加这个的话，新版那台会在 open_buff 里空转：一分钟零点击，
+	# detect_record 是空集，直接 GameStuckError（2026-11-11 09:29 oas1 实测）。
+	I_BUFF_1_NEW = RuleImage(roi_front=(228,32,54,64), roi_back=(200,0,200,130), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralBuff/gb/gb_buff_1_new.png")
 	# description 
 	I_AWAKE = RuleImage(roi_front=(381,130,35,45), roi_back=(360,107,80,447), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralBuff/gb/gb_awake.png")
 	# 御魂加成 
