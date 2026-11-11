@@ -67,8 +67,20 @@ class GameUiAssets:
 	I_MAIN_GOTO_REALM_RAID = RuleImage(roi_front=(240,670,74,38), roi_back=(0,600,1280,120), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_main_goto_realm_raid.png")
 	# 庭院卷轴关闭标识 
 	I_MAIN_SCROLL_CLOSE = RuleImage(roi_front=(1181,634,28,39), roi_back=(1162,595,77,112), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_main_scroll_close.png")
-	# description 
-	I_MAIN_GOTO_EXPLORATION = RuleImage(roi_front=(493,116,45,75), roi_back=(243,100,933,211), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_main_goto_exploration.png")
+	# 庭院 -> 探索（主界面上的「探索」灯笼）
+	# ⚠️ 2026-11-11 12:40「一直卡在 waiting for page_exploration」的真因是
+	# **识别得到、但点在空气上**，不是识别不到：
+	#   - 模板匹配是在 roi_back 里滑窗，实测模板命中的是 (681,154) 的灯笼，score 0.876；
+	#   - 但 appear_then_click 点的是 coord() —— 在 roi_front 里随机，
+	#     旧 roi_front=(493,116,45,75) 落在灯笼**左边 166px 的空地**上；
+	#   - 于是「出现」恒为真（0.876 > 0.8）、点击恒落空，ui_goto 每轮打
+	#     「Page switch: page_main -> page_exploration」然后死等对方页面。
+	#   - 旧 roi_back 是 (243,100,933,211) 一整条天空，模板挪到哪都能命中，
+	#     所以永远走不到「认不出来」的兜底分支 —— 这种哑巴失败最难查。
+	# 改法：roi_front 挪到灯笼实际位置（中心 681,154，已用 adb tap 实测能进探索页），
+	# roi_back 收窄到灯笼周围 ±40。宁可认不出来去走兜底/报错，也不要点空。
+	# 实测：新位置 0.8763（落樱动画下 0.853），灯笼左边旧位置窗口只有 0.31。
+	I_MAIN_GOTO_EXPLORATION = RuleImage(roi_front=(659,117,45,75), roi_back=(620,90,130,140), threshold=0.75, method="Template matching", file="./tasks/GameUi/page/page_main_goto_exploration.png")
 	# description 
 	I_CHECK_EXPLORATION = RuleImage(roi_front=(681,12,27,36), roi_back=(661,0,70,61), threshold=0.65, method="Template matching", file="./tasks/GameUi/page/page_check_exploration.png")
 	# 探索前往觉醒 
