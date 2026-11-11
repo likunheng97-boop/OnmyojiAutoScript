@@ -8,7 +8,7 @@ from random import choice
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.GameUi.game_ui import GameUi
-from tasks.GameUi.page import page_shikigami_records, page_goryou_realm
+from tasks.GameUi.page import page_shikigami_records, page_goryou_realm, page_main
 from tasks.GoryouRealm.assets import GoryouRealmAssets
 from tasks.GoryouRealm.config import GoryouClass
 
@@ -71,8 +71,19 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, GoryouRealmAssets):
                     break
 
 
-        self.ui_click(self.I_UI_BACK_YELLOW, self.I_CHECK_EXPLORATION)
-        logger.info('Back to exploration')
+        # 同 RealmRaid 的坑：不能拿 I_CHECK_EXPLORATION 当停止条件 ——
+        # 新版探索页上这个「探索」标题锚点只剩 0.23（阈值 0.65），永远不出现，
+        # ui_click 会变成「stop 不出现 + click 认不出」的无限空转，且不打日志。
+        # 改成有限次点关闭键，然后交给 ui_goto 回庭院（从探索页两跳，从庭院直接返回）。
+        for _ in range(6):
+            self.screenshot()
+            if not self.appear(self.I_UI_BACK_YELLOW):
+                break
+            self.appear_then_click(self.I_UI_BACK_YELLOW, interval=1)
+
+        self.ui_get_current_page()
+        self.ui_goto(page_main)
+        logger.info('Back to main')
         self.set_next_run(task='GoryouRealm', success=True, finish=True)
         raise TaskEnd
 

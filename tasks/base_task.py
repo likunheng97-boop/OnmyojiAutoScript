@@ -740,6 +740,10 @@ class BaseTask(GlobalGameAssets, CostumeBase):
         :return:
         """
         timer = Timer(timeout).start() if timeout else None
+        # 空转告警：stop 永远不出现、click 也认不出来时，这个循环会一帧一帧截图到天荒地老，
+        # 而且**一行日志都不打**（2026-11-11 个人突破刷完票卡在探索页就是这么来的）。
+        # 这里不改变行为，只是每空转 30 秒喊一次，免得又要靠人工翻截图去猜。
+        idle = Timer(30).start()
         while 1:
             self.screenshot()
             if self.appear(stop):
@@ -747,11 +751,19 @@ class BaseTask(GlobalGameAssets, CostumeBase):
             if timer and timer.reached():
                 logger.warning(f'ui_click timeout after {timeout}s')
                 return False
+            if idle.reached_and_reset():
+                logger.warning(
+                    f'ui_click 空转 30 秒：stop [{getattr(stop, "name", stop)}] 一直没出现，'
+                    f'click [{getattr(click, "name", click)}] 也认不出来，'
+                    f'大概率是锚点在新 UI 上失效了（本循环不会自己退出）')
             if isinstance(click, RuleImage) and self.appear_then_click(click, interval=interval):
+                idle.reset()
                 continue
             if isinstance(click, RuleClick) and self.click(click, interval=interval):
+                idle.reset()
                 continue
             elif isinstance(click, RuleOcr) and self.ocr_appear_click(click, interval=interval):
+                idle.reset()
                 continue
 
     def ui_clicks(self, clicks: list[RuleImage | RuleOcr | RuleClick], stop: RuleImage, interval=1):

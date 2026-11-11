@@ -278,7 +278,22 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                 break
 
 
-        self.ui_click(self.I_BACK_RED, self.I_CHECK_EXPLORATION)
+        # 关掉个人突破页面，回到探索页，再回庭院。
+        #
+        # 这里原来写的是 self.ui_click(self.I_BACK_RED, self.I_CHECK_EXPLORATION)，
+        # 2026-11-11 换 UI 之后它变成了**不打日志的无限空转**：
+        #   stop  I_CHECK_EXPLORATION 在新版探索页上只有 0.23（阈值 0.65），永不出现；
+        #   click I_BACK_RED 在探索页上是 -0.08，也认不出来。
+        #   ui_click 的循环体是「stop 出现？没有 → click 认得出？没有 → continue」，
+        #   于是一帧一帧截图死循环，票刷完后永远卡在探索页（13:16 实测）。
+        # 改成：只要还认得出个人突破的关闭键就点，认不出来就当已经退出来了。
+        # 用次数上限而不是无限循环，避免弹窗挡住时又变成另一种卡死。
+        for _ in range(6):
+            self.screenshot()
+            if not self.appear(self.I_BACK_RED):
+                break
+            self.appear_then_click(self.I_BACK_RED, interval=1)
+
         self.ui_get_current_page()
         self.ui_goto(page_main)
         self.set_next_run(task='RealmRaid', success=success, finish=True)
